@@ -31,3 +31,7 @@ Temporary Items
 .crt
 .csr
 .pem
+
+# Local development
+.venv/
+.env

@@ -29,6 +29,10 @@ Supported configuration (App Settings):
   - MaxBatchBytes (default 1048576)
   - InactivityTimeout (default 10 seconds per hub receive pass)
 
+Deploy from Azure portal (custom template)
+- Use deploy/azuredeploy.json with Azure Portal > Create a resource > Template deployment (custom). The template prompts for Function App name, Event Hubs connection, consumer group, CSV of hubs, OCI credentials, message endpoint, stream OCID, and optional batch sizes.
+- Provide an HTTPS URL to the packaged zip (WEBSITE_RUN_FROM_PACKAGE) so the portal can deploy without CLI. You can generate the zip locally or use the GitHub Actions artifact described below.
+
 Schedule:
 - Default schedule (CRON): 0 */1 * * * * (every minute). Adjust in function.json.
 
@@ -110,10 +114,10 @@ az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   MaxBatchSize="100" MaxBatchBytes="1048576" InactivityTimeout="10"
 
 4) Package and deploy just this function folder
-cd "Solutions/Oracle Cloud Infrastructure/Data Connectors/EventHubsNamespaceToOCIStreaming"
-zip -r ../../../../function-deploy.zip .
+cd function/EventHubsNamespaceToOCIStreaming
+zip -r ../../function-deploy.zip .
 cd - 1>/dev/null
-az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "Solutions/function-deploy.zip"
+az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "function-deploy.zip"
 
 5) Validate logs and execution
 az functionapp log tail -g "$RG" -n "$APP"
@@ -124,6 +128,14 @@ Operational notes:
 - Use a dedicated consumer group to avoid interference with other consumers.
 - Ensure the Function App has outbound access to OCI endpoints (consider firewall/vnet rules).
 - Secure key_content via Azure Key Vault references in app settings for production.
+- Helper script update: scripts/drain_eventhub_to_oci.sh now reads MessageEndpoint / StreamOcid from local.settings.json if OCI_MESSAGE_ENDPOINT / OCI_STREAM_OCID are not exported, preventing the “OCI_MESSAGE_ENDPOINT and/or OCI_STREAM_OCID not set” error during local validation.
+
+Packaging options (zip for portal or CI/CD)
+- Local zip: from repo root run
+  python3 -m pip install -r function/EventHubsNamespaceToOCIStreaming/requirements.txt --target function/EventHubsNamespaceToOCIStreaming/.python_packages/lib/site-packages
+  (cd function/EventHubsNamespaceToOCIStreaming && zip -qry ../../azurelogs2oci-function.zip .)
+  Upload azurelogs2oci-function.zip to a storage container with a SAS URL and paste that URL into the portal template packageUri field.
+- GitHub Actions: trigger .github/workflows/deploy-azure-function.yml (workflow_dispatch). It builds the zip, uploads it as an artifact, and can deploy directly when AZURE_FUNCTIONAPP_PUBLISH_PROFILE is provided as a secret.
 
 Cleanup guidance (repo):
 - You can retain this function folder as the authoritative multi-hub → OCI implementation.

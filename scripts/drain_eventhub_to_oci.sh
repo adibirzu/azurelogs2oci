@@ -33,6 +33,44 @@ FROM_BEGINNING=true                   # default mode (can switch to START_ISO)
 START_ISO=""                          # ISO timestamp if provided
 INACTIVITY_TIMEOUT="${INACTIVITY_TIMEOUT:-30}"
 ALL_EVENTHUBS="${ALL_EVENTHUBS:-false}"
+LOCAL_SETTINGS_PATH="${LOCAL_SETTINGS_PATH:-$SCRIPT_DIR/../function/EventHubsNamespaceToOCIStreaming/local.settings.json}"
+ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
+
+try_load_from_local_settings() {
+  local file="$1"
+  [[ ! -f "$file" ]] && return
+  info "Attempting to load OCI settings from $file"
+  set +e
+  local parsed
+  parsed="$(LOCAL_SETTINGS_PATH="$file" python3 - <<'PY'
+import json
+import os
+path = os.environ["LOCAL_SETTINGS_PATH"]
+with open(path) as fh:
+    data = json.load(fh)
+vals = data.get("Values", {})
+print(vals.get("MessageEndpoint") or vals.get("OCI_MESSAGE_ENDPOINT") or "")
+print(vals.get("StreamOcid") or vals.get("OCI_STREAM_OCID") or "")
+PY
+)"
+  local rc=$?
+  set -e
+  if [[ $rc -ne 0 ]]; then
+    warn "Could not parse $file for OCI settings"
+    return
+  fi
+  local file_endpoint file_stream
+  file_endpoint="$(echo "$parsed" | sed -n '1p')"
+  file_stream="$(echo "$parsed" | sed -n '2p')"
+  if [[ -z "$OCI_MESSAGE_ENDPOINT" && -n "$file_endpoint" ]]; then
+    OCI_MESSAGE_ENDPOINT="$file_endpoint"
+    ok "Loaded OCI_MESSAGE_ENDPOINT from $file"
+  fi
+  if [[ -z "$OCI_STREAM_OCID" && -n "$file_stream" ]]; then
+    OCI_STREAM_OCID="$file_stream"
+    ok "Loaded OCI_STREAM_OCID from $file"
+  fi
+}
 
 # Parse flags
 while [[ $# -gt 0 ]]; do
@@ -76,6 +114,15 @@ EOF
       exit 1;;
   esac
 done
+
+# Optional .env overrides (useful for local testing)
+if [[ -f "$ENV_FILE" ]]; then
+  info "Loading overrides from $ENV_FILE"
+  # shellcheck disable=SC1090
+  set -a
+  source "$ENV_FILE"
+  set +a
+fi
 
 echo -e "${GREEN}===============================================================================${NC}"
 echo -e "${GREEN}🚀 Drain Azure Event Hub → OCI Streaming (Automated)${NC}"
@@ -134,6 +181,10 @@ if [[ -z "$OCI_MESSAGE_ENDPOINT" || -z "$OCI_STREAM_OCID" ]]; then
   else
     warn "OCI config file not found. Ensure OCI_MESSAGE_ENDPOINT and OCI_STREAM_OCID are exported."
   fi
+fi
+
+if [[ -z "$OCI_MESSAGE_ENDPOINT" || -z "$OCI_STREAM_OCID" ]]; then
+  try_load_from_local_settings "$LOCAL_SETTINGS_PATH"
 fi
 
 if [[ -z "$OCI_MESSAGE_ENDPOINT" || -z "$OCI_STREAM_OCID" ]]; then

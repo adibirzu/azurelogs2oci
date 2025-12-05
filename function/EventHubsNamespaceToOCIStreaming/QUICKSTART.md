@@ -7,6 +7,8 @@ What you get
 - Reads from configured Event Hubs using a namespace connection string
 - Batches messages and base64-encodes payloads as required by OCI Streaming
 - Sends to your OCI Stream using API signing keys
+- Portal-friendly deployment: ARM template (deploy/azuredeploy.json) that accepts all app settings and a zip URL
+- GitHub Actions workflow for zip build/deploy (.github/workflows/deploy-azure-function.yml)
 
 Repo path
 - Solutions/Oracle Cloud Infrastructure/Data Connectors/EventHubsNamespaceToOCIStreaming
@@ -84,10 +86,21 @@ az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   MaxBatchSize="100" MaxBatchBytes="1048576" InactivityTimeout="10"
 
 4) Package and deploy the function
-cd "Solutions/Oracle Cloud Infrastructure/Data Connectors/EventHubsNamespaceToOCIStreaming"
-zip -r ../../../../function-deploy.zip .
+cd function/EventHubsNamespaceToOCIStreaming
+zip -r ../../function-deploy.zip .
 cd - 1>/dev/null
-az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "Solutions/function-deploy.zip"
+az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "function-deploy.zip"
+
+Alternative: Azure Portal (custom deployment)
+- Go to Azure Portal > Create a resource > Template deployment (deploy a custom template)
+- Upload deploy/azuredeploy.json and fill values (Function App name, Event Hubs connection string, consumer group, EventHubNamesCsv, OCI credentials, MessageEndpoint, StreamOcid, optional batch settings)
+- PackageUri: provide an HTTPS URL to the zip produced locally or by the GitHub Actions workflow (upload the zip to a storage container with SAS)
+- Review + create, then validate in Function App > Configuration and log stream
+
+CI/CD via GitHub Actions (manual)
+- Trigger .github/workflows/deploy-azure-function.yml with inputs.function_app_name set to your target Function App
+- Add secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE (get from Function App > Overview > Get publish profile)
+- The workflow builds a zip with dependencies under .python_packages, publishes it as an artifact, and deploys it to your Function App
 
 5) Validate
 - Tail logs:
@@ -101,6 +114,9 @@ Notes and troubleshooting
 - Use a dedicated consumer group to avoid interfering with other consumers.
 - Ensure outbound network access from the Function App to OCI endpoint.
 - Secure key_content via Azure Key Vault (Key Vault references in app settings) for production.
+
+Helper script note
+- scripts/drain_eventhub_to_oci.sh now falls back to MessageEndpoint / StreamOcid from local.settings.json if OCI_MESSAGE_ENDPOINT / OCI_STREAM_OCID env vars are absent, avoiding missing-variable errors during dry runs.
 
 Minimal local testing (optional)
 Create a local.settings.json (do not commit):

@@ -24,6 +24,8 @@ The fastest way to deploy is with the function-specific quickstart.
 
 - Quickstart (Function): function/EventHubsNamespaceToOCIStreaming/QUICKSTART.md
 - Details and operational notes: function/EventHubsNamespaceToOCIStreaming/README.md
+- Azure portal template (custom deployment): deploy/azuredeploy.json
+- GitHub Actions manual zip deploy: .github/workflows/deploy-azure-function.yml
 
 High-level steps:
 1) Create or identify the Azure Event Hubs namespace and hubs carrying your logs.
@@ -61,6 +63,7 @@ High-level steps:
   - eventhub_consumer.py: Consumer helper used by the drain script
 - docs/
   - EVENT_FORMAT_DOCUMENTATION.md: Notes on expected event formats and metadata
+  - blog-azurelogs-to-oci-streaming.md: Blog-ready walkthrough
 
 ## Notes/Issues
 
