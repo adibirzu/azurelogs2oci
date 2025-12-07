@@ -36,3 +36,4 @@ Temporary Items
 .venv/
 .env
 .python_packages/
+azurelogs2oci-function.zip

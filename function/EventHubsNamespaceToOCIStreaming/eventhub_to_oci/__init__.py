@@ -33,34 +33,48 @@ DEFAULT_INACTIVITY_TIMEOUT = int(os.getenv('InactivityTimeout', 10))
 
 
 def parse_key(key_input: str) -> str:
-    """Parse OCI private key from single-line format into PEM"""
+    """Parse OCI private key from single-line format into PEM, tolerating trailing text"""
     try:
         import re
-        begin_line = re.search(r'-----BEGIN [A-Z ]+-----', key_input).group()
-        key_input = key_input.replace(begin_line, '')
-        end_line = re.search(r'-----END [A-Z ]+-----', key_input).group()
-        key_input = key_input.replace(end_line, '')
+        import textwrap
 
-        encr_lines = ''
-        proc_type_line = re.search(r'Proc-Type: [^ ]+', key_input)
+        # Normalize escaped newlines and strip outer whitespace
+        normalized = (key_input or "").replace("\\n", "\n").strip()
+
+        begin_match = re.search(r"-----BEGIN [A-Z ]+-----", normalized)
+        end_match = re.search(r"-----END [A-Z ]+-----", normalized)
+        if not begin_match or not end_match:
+            raise ValueError("BEGIN/END markers not found")
+
+        begin_line = begin_match.group()
+        end_line = end_match.group()
+
+        # Only keep content between the markers, discard anything after the end marker
+        key_block = normalized[begin_match.end() : end_match.start()]
+
+        # Handle encrypted keys if present
+        encr_lines = ""
+        proc_type_line = re.search(r"Proc-Type: [^\n]+", key_block)
+        dec_info_line = re.search(r"DEK-Info: [^\n]+", key_block)
         if proc_type_line:
-            proc_type_line = proc_type_line.group()
-            dec_info_line = re.search(r'DEK-Info: [^ ]+', key_input).group()
-            encr_lines += proc_type_line + '\n'
-            encr_lines += dec_info_line + '\n'
-            key_input = key_input.replace(proc_type_line, '')
-            key_input = key_input.replace(dec_info_line, '')
+            encr_lines += proc_type_line.group().strip() + "\n"
+            key_block = key_block.replace(proc_type_line.group(), "")
+        if dec_info_line:
+            encr_lines += dec_info_line.group().strip() + "\n"
+            key_block = key_block.replace(dec_info_line.group(), "")
 
-        body = key_input.strip().replace(' ', '\n')
-        res = ''
-        res += begin_line + '\n'
+        # Remove whitespace and wrap to PEM-friendly line lengths
+        body_compact = re.sub(r"\s+", "", key_block)
+        wrapped_body = "\n".join(textwrap.wrap(body_compact, 64))
+
+        parts = [begin_line]
         if encr_lines:
-            res += encr_lines + '\n'
-        res += body + '\n'
-        res += end_line
-        return res
+            parts.append(encr_lines.rstrip("\n"))
+        parts.append(wrapped_body)
+        parts.append(end_line)
+        return "\n".join(parts)
     except Exception:
-        raise Exception('Error while reading private key.')
+        raise Exception("Error while reading private key.")
 
 
 def get_oci_config_from_env() -> dict:

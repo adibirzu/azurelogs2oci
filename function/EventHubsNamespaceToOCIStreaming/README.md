@@ -1,40 +1,38 @@
-# EventHubsNamespaceToOCIStreaming (Timer-triggered Azure Function)
+# EventHubsNamespaceToOCIStreaming (Event Hub-triggered Azure Function)
 
 Purpose:
-- Iterates one or more Event Hubs in a namespace and forwards all messages to Oracle Cloud Infrastructure (OCI) Streaming using the PutMessages API.
+- Processes events from Azure Event Hub in real-time and forwards them to Oracle Cloud Infrastructure (OCI) Streaming using the PutMessages API.
 - Batching with 1MB and count limits, base64-encodes payloads as required by OCI.
-- Timer trigger runs on a schedule (default: every minute) and processes each configured hub.
+- Event Hub trigger processes events as they arrive (no polling/scheduling).
 
 Folder contents:
-- __init__.py: Function logic (Event Hub consumers + OCI sender)
-- function.json: Timer binding (schedule)
+- eventhub_to_oci/__init__.py: Function logic (Event Hub trigger + OCI sender)
+- eventhub_to_oci/function.json: Event Hub trigger binding (real-time processing)
 - requirements.txt: Python deps (azure-functions, azure-eventhub, oci)
-- host.json: Function host configuration
+- host.json: Function host configuration (extension bundle v4+)
 
 Supported configuration (App Settings):
 - EventHubsConnectionString: Event Hubs namespace-level connection string (RootManageSharedAccessKey with Listen)
-- EventHubConsumerGroup: Consumer group (default $Default). Use a dedicated group in production.
-- EventHubNamesCsv: Comma-separated list of Event Hub entity names to process (e.g., insights-activity-logs, another-hub)
+- EventHubName: Single Event Hub name bound to the trigger (first hub if you listed multiple)
 - MessageEndpoint or OCI_MESSAGE_ENDPOINT: OCI Streaming message endpoint (e.g., https://cell-1.streaming.<region>.oci.oraclecloud.com)
 - StreamOcid or OCI_STREAM_OCID: Target OCI stream OCID
 - OCI credentials:
   - user: OCI user OCID
   - key_content: Private key content (single-line supported; function rewraps to PEM)
   - pass_phrase: Optional
-  - fingerprint: API key fingerprint
+  - fingerprint: API key fingerprint (must match the private key)
   - tenancy: OCI tenancy OCID
   - region: OCI region name
 - Optional:
-  - MaxBatchSize (default 100)
-  - MaxBatchBytes (default 1048576)
-  - InactivityTimeout (default 10 seconds per hub receive pass)
+  - MaxBatchSize (default 100): Maximum messages per batch
+  - MaxBatchBytes (default 1048576): Maximum batch size in bytes (1MB OCI limit)
 
 Deploy from Azure portal (custom template)
 - Use deploy/azuredeploy.json with Azure Portal > Create a resource > Template deployment (custom). The template prompts for Function App name, Event Hubs connection, consumer group, CSV of hubs, OCI credentials, message endpoint, stream OCID, and optional batch sizes.
 - Provide an HTTPS URL to the packaged zip (WEBSITE_RUN_FROM_PACKAGE) so the portal can deploy without CLI. You can generate the zip locally or use the GitHub Actions artifact described below.
 
-Schedule:
-- Default schedule (CRON): 0 */1 * * * * (every minute). Adjust in function.json.
+Trigger:
+- Event Hub trigger: Processes events in real-time as they arrive in the configured Event Hub.
 
 Prerequisites:
 - Azure:
@@ -56,13 +54,14 @@ Local run (optional):
 {
   "IsEncrypted": false,
   "Values": {
-    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
-    "FUNCTIONS_WORKER_RUNTIME": "python",
-    "EventHubsConnectionString": "Endpoint=sb://<ns>.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=...;",
-    "EventHubConsumerGroup": "$Default",
-    "EventHubNamesCsv": "insights-activity-logs",
-    "MessageEndpoint": "https://cell-1.streaming.<region>.oci.oraclecloud.com",
-    "StreamOcid": "ocid1.stream.oc1..xxxx",
+  "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+  "FUNCTIONS_WORKER_RUNTIME": "python",
+  "EventHubsConnectionString": "Endpoint=sb://<ns>.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=...;",
+  "EventHubConsumerGroup": "$Default",
+  "EventHubName": "insights-activity-logs",
+  "EventHubNamesCsv": "insights-activity-logs",
+  "MessageEndpoint": "https://cell-1.streaming.<region>.oci.oraclecloud.com",
+  "StreamOcid": "ocid1.stream.oc1..xxxx",
     "user": "ocid1.user.oc1..xxxx",
     "key_content": "-----BEGIN PRIVATE KEY----- ... -----END PRIVATE KEY-----",
     "pass_phrase": "",
@@ -75,6 +74,8 @@ Local run (optional):
   }
 }
 - Run: func start
+- For a quick local smoke test against OCI, copy .env.example to .env at repo root, set EventHubsConnectionString and the OCI *stream* OCID (not stream pool), then run ./scripts/drain_eventhub_to_oci.sh --from-beginning. The script will read .env/local.settings.json and confirm it can put messages to OCI.
+- Need help populating .env? Run ./scripts/setup_eventhub_to_oci.sh to auto-discover Event Hubs via Azure CLI, resolve the connection string, and prompt for OCI settings; it writes .env (git-ignored).
 
 Deploy to Azure using Azure CLI (zip deploy):
 1) Variables
@@ -93,6 +94,7 @@ az functionapp create -g "$RG" -n "$APP" --consumption-plan-location "$LOC" --ru
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   EventHubsConnectionString="Endpoint=sb://<ns>.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=..." \
   EventHubConsumerGroup="$Default" \
+  EventHubName="insights-activity-logs" \
   EventHubNamesCsv="insights-activity-logs,another-hub"
 
 # OCI target
@@ -111,7 +113,8 @@ az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
 
 # Optional tuning
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
-  MaxBatchSize="100" MaxBatchBytes="1048576" InactivityTimeout="10"
+  MaxBatchSize="100" MaxBatchBytes="1048576"
+# (InactivityTimeout is ignored for the Event Hub trigger)
 
 4) Package and deploy just this function folder
 cd function/EventHubsNamespaceToOCIStreaming
@@ -120,10 +123,15 @@ cd - 1>/dev/null
 az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "function-deploy.zip"
 
 5) Validate logs and execution
-az functionapp log tail -g "$RG" -n "$APP"
+az webapp log tail -g "$RG" -n "$APP"
+# or use Functions Core Tools
+# func azure functionapp logstream "$APP" --resource-group "$RG"
+# Look for "Config summary" and per-hub "summary: sent=..." lines confirming messages are forwarded.
+- Note: logstream is not supported on Linux Consumption. Use a premium plan (EP1) via provision_azure_to_oci.sh or open Application Insights Live Metrics in the portal.
+- If you see a warning about Stream Pool OCIDs, update StreamOcid to the Stream OCID (ocid1.stream...) instead of the Stream Pool (ocid1.streampool...).
 
 Operational notes:
-- This function reads from @latest each run with a short inactivity window (InactivityTimeout per hub). For continuous processing, keep the 1-minute schedule; or increase schedule frequency.
+- The Event Hub trigger reads continuously from the configured `EventHubName` and consumer group. Use the drain script for one-time backfill (`--from-beginning` or `--start-iso`).
 - For checkpointing across runs, integrate Azure Blob checkpoint store (not included by default). Current design updates partition checkpoints in-session only.
 - Use a dedicated consumer group to avoid interference with other consumers.
 - Ensure the Function App has outbound access to OCI endpoints (consider firewall/vnet rules).
@@ -138,5 +146,5 @@ Packaging options (zip for portal or CI/CD)
 - GitHub Actions: trigger .github/workflows/deploy-azure-function.yml (workflow_dispatch). It builds the zip, uploads it as an artifact, and can deploy directly when AZURE_FUNCTIONAPP_PUBLISH_PROFILE is provided as a secret.
 
 Cleanup guidance (repo):
-- You can retain this function folder as the authoritative multi-hub → OCI implementation.
+- You can retain this function folder as the authoritative Event Hub trigger → OCI implementation.
 - Candidate items to archive/remove if no longer needed: earlier experimental connectors or duplicate templates. Consider moving older folders into an archive/ directory for traceability.

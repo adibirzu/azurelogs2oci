@@ -1,17 +1,14 @@
 # QUICKSTART: Deploy EventHubsNamespaceToOCIStreaming to Azure and forward logs to OCI Streaming
 
-This function consumes from one or more Azure Event Hubs (within a namespace) and forwards messages to Oracle Cloud Infrastructure (OCI) Streaming via the PutMessages API.
+This function consumes from a selected Azure Event Hub (within a namespace) and forwards messages to Oracle Cloud Infrastructure (OCI) Streaming via the PutMessages API.
 
 What you get
-- Timer-triggered Azure Function (runs every minute by default)
-- Reads from configured Event Hubs using a namespace connection string
+- Event Hub-triggered Azure Function (real-time, no schedule/poller)
+- Reads from the configured Event Hub using a namespace connection string
 - Batches messages and base64-encodes payloads as required by OCI Streaming
-- Sends to your OCI Stream using API signing keys
+- Sends to your OCI Stream using API signing keys (fingerprint must match the private key)
 - Portal-friendly deployment: ARM template (deploy/azuredeploy.json) that accepts all app settings and a zip URL
 - GitHub Actions workflow for zip build/deploy (.github/workflows/deploy-azure-function.yml)
-
-Repo path
-- Solutions/Oracle Cloud Infrastructure/Data Connectors/EventHubsNamespaceToOCIStreaming
 
 Prerequisites
 - Azure:
@@ -24,14 +21,11 @@ Prerequisites
 - Local tools:
   - zip (or 7z) for packaging the function
 
-1) Identify Event Hubs to consume
-Use Azure CLI to list hubs in your namespace and build EventHubNamesCsv:
-az eventhubs eventhub list -g <resource-group> --namespace-name <namespace> --query "[].name" -o tsv | paste -sd, -
+1) Identify the Event Hub to bind to the trigger
+Use Azure CLI to list hubs in your namespace and select the one you want the Function to process:
+az eventhubs eventhub list -g <resource-group> --namespace-name <namespace> --query "[].name" -o tsv
 
-Example:
-- RG: ocitests
-- Namespace: insights-activity-logs
-- EventHubNamesCsv might be "insights-activity-logs" or a CSV like "hub1,hub2"
+Set `EventHubName` to that hub (use a dedicated consumer group if possible).
 
 2) Create the Function App (Linux, Python 3.11, Functions v4)
 Set variables:
@@ -49,14 +43,15 @@ az functionapp create -g "$RG" -n "$APP" --consumption-plan-location "$LOC" --ru
 Required settings
 - EventHubsConnectionString: Namespace-level connection string with Listen (RootManageSharedAccessKey)
 - EventHubConsumerGroup: Consumer group name (e.g., $Default)
-- EventHubNamesCsv: Comma-separated list of hub names
+- EventHubName: The single Event Hub bound to the Function trigger
+- EventHubNamesCsv: Optional CSV of hubs for helper scripts (drain/backfill)
 - MessageEndpoint: OCI messages endpoint (https://cell-1.streaming.<region>.oci.oraclecloud.com)
 - StreamOcid: OCI Stream OCID
 - OCI credentials:
   - user (OCI user OCID)
   - key_content (private key PEM; single-line supported)
   - pass_phrase (optional)
-  - fingerprint (API key fingerprint)
+  - fingerprint (API key fingerprint that matches key_content)
   - tenancy (tenancy OCID)
   - region (OCI region name)
 
@@ -65,7 +60,7 @@ Example commands:
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   EventHubsConnectionString="Endpoint=sb://<ns>.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=..." \
   EventHubConsumerGroup="$Default" \
-  EventHubNamesCsv="insights-activity-logs"
+  EventHubName="insights-activity-logs"
 
 # OCI target
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
@@ -83,7 +78,8 @@ az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
 
 Optional tuning:
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
-  MaxBatchSize="100" MaxBatchBytes="1048576" InactivityTimeout="10"
+  MaxBatchSize="100" MaxBatchBytes="1048576"
+# (InactivityTimeout is ignored for the Event Hub trigger; batching is what matters here)
 
 4) Package and deploy the function
 cd function/EventHubsNamespaceToOCIStreaming
@@ -103,9 +99,14 @@ CI/CD via GitHub Actions (manual)
 - The workflow builds a zip with dependencies under .python_packages, publishes it as an artifact, and deploys it to your Function App
 
 5) Validate
-- Tail logs:
-  az functionapp log tail -g "$RG" -n "$APP"
+- Tail logs (choose one):
+  az webapp log tail -g "$RG" -n "$APP"
+  # or (Functions Core Tools)
+  func azure functionapp logstream "$APP" --resource-group "$RG"
 - You should see partition start/close messages, batch flush logs, and OCI send results
+- A "Config summary" line will echo the hubs, consumer group, and masked endpoint/stream OCID to confirm settings from provisioning are applied.
+- Note: logstream is not supported on Linux Consumption. Use a premium plan (EP1) via provision_azure_to_oci.sh or open Application Insights Live Metrics in the portal.
+- If you see a warning about Stream Pool OCIDs, update StreamOcid to the Stream OCID (ocid1.stream...) instead of the Stream Pool (ocid1.streampool...).
 - Verify messages arrive in your OCI Streaming stream
 
 Notes and troubleshooting
@@ -127,6 +128,7 @@ Create a local.settings.json (do not commit):
     "FUNCTIONS_WORKER_RUNTIME": "python",
     "EventHubsConnectionString": "Endpoint=sb://...;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=...;",
     "EventHubConsumerGroup": "$Default",
+    "EventHubName": "insights-activity-logs",
     "EventHubNamesCsv": "insights-activity-logs",
     "MessageEndpoint": "https://cell-1.streaming.<region>.oci.oraclecloud.com",
     "StreamOcid": "ocid1.stream.oc1..xxxx",
@@ -140,6 +142,11 @@ Create a local.settings.json (do not commit):
 }
 Then:
 func start
+- Alternative smoke test: copy .env.example to .env in the repo root, set EventHubsConnectionString and the OCI *stream* OCID (not the stream pool OCID), and run:
+  ./scripts/drain_eventhub_to_oci.sh --from-beginning
+  This drains locally and confirms messages can be written to OCI Streaming.
+- To generate .env interactively (discovers Event Hubs via Azure CLI), run:
+  ./scripts/setup_eventhub_to_oci.sh
 
 Repository cleanup status
 - Legacy/duplicate connectors, ARM templates, and test/demo scripts were removed per your instruction.

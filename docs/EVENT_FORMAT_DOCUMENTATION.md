@@ -145,7 +145,7 @@ Messages are sent to OCI Streaming using the PutMessages API with Base64 encodin
 Test with 50 dummy events:
 
 ```bash
-cd "/Users/abirzu/dev/Azure-Sentinel/Solutions/Oracle Cloud Infrastructure/Data Connectors"
+cd "<repo-root>/Azure-Sentinel/Solutions/Oracle Cloud Infrastructure/Data Connectors"
 python3 test_oci_streaming_real.py --count 50 --mock
 ```
 
