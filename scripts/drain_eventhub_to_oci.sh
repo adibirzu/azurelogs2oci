@@ -36,6 +36,55 @@ ALL_EVENTHUBS="${ALL_EVENTHUBS:-false}"
 LOCAL_SETTINGS_PATH="${LOCAL_SETTINGS_PATH:-$SCRIPT_DIR/../function/EventHubsNamespaceToOCIStreaming/local.settings.json}"
 ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
 
+prompt_eventhub_if_missing() {
+  if [[ "$ALL_EVENTHUBS" == true ]]; then
+    return
+  fi
+  if [[ -n "$EVENTHUB_NAME" ]]; then
+    return
+  fi
+  if ! command -v az >/dev/null 2>&1; then
+    warn "Azure CLI not found; cannot list Event Hubs. Set EVENTHUB_NAME or use --all-eventhubs."
+    return
+  fi
+  info "Enumerating Event Hubs in namespace '$EVENTHUB_NAMESPACE'..."
+  HUBS=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && HUBS+=("$line")
+  done < <(az eventhubs eventhub list \
+    --resource-group "$EVENTHUB_RG" \
+    --namespace-name "$EVENTHUB_NAMESPACE" \
+    --query "[].name" \
+    --output tsv 2>/dev/null)
+
+  if [[ ${#HUBS[@]} -eq 0 ]]; then
+    warn "No Event Hubs discovered; specify --eventhub-name or use --all-eventhubs."
+    return
+  fi
+
+  echo "Available Event Hubs:"
+  i=1
+  for h in "${HUBS[@]}"; do
+    echo "  [$i] $h"
+    ((i++))
+  done
+  read -r -p "Select Event Hub number, type a name, or enter 'all' to drain all: " choice
+  if [[ "$choice" == "all" ]]; then
+    ALL_EVENTHUBS=true
+    return
+  fi
+  if [[ "$choice" =~ ^[0-9]+$ ]]; then
+    idx=$((choice-1))
+    if [[ $idx -ge 0 && $idx -lt ${#HUBS[@]} ]]; then
+      EVENTHUB_NAME="${HUBS[$idx]}"
+      return
+    fi
+  fi
+  if [[ -n "$choice" ]]; then
+    EVENTHUB_NAME="$choice"
+  fi
+}
+
 try_load_from_local_settings() {
   local file="$1"
   [[ ! -f "$file" ]] && return
@@ -116,13 +165,20 @@ EOF
 done
 
 # Optional .env overrides (useful for local testing)
-if [[ -f "$ENV_FILE" ]]; then
-  info "Loading overrides from $ENV_FILE"
-  # shellcheck disable=SC1090
-  set -a
-  source "$ENV_FILE"
-  set +a
-fi
+# Load env overrides (prefers explicit ENV_FILE, then common locations)
+ENV_CANDIDATES=("$ENV_FILE" "$SCRIPT_DIR/../.env" "$PWD/.env")
+for candidate in "${ENV_CANDIDATES[@]}"; do
+  if [[ -f "$candidate" ]]; then
+    info "Loading overrides from $candidate"
+    # shellcheck disable=SC1090
+    set -a
+    source "$candidate"
+    set +a
+    break
+  fi
+done
+
+prompt_eventhub_if_missing
 
 echo -e "${GREEN}===============================================================================${NC}"
 echo -e "${GREEN}🚀 Drain Azure Event Hub → OCI Streaming (Automated)${NC}"
@@ -185,6 +241,10 @@ fi
 
 if [[ -z "$OCI_MESSAGE_ENDPOINT" || -z "$OCI_STREAM_OCID" ]]; then
   try_load_from_local_settings "$LOCAL_SETTINGS_PATH"
+  # Try a sibling local.settings.json if the default path is absent
+  if [[ -z "$OCI_MESSAGE_ENDPOINT" || -z "$OCI_STREAM_OCID" ]]; then
+    try_load_from_local_settings "$PWD/local.settings.json"
+  fi
 fi
 
 if [[ -z "$OCI_MESSAGE_ENDPOINT" || -z "$OCI_STREAM_OCID" ]]; then

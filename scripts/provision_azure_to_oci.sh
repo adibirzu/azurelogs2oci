@@ -211,6 +211,8 @@ if [[ -z "$key_content" || "$key_content" == "-----BEGIN PRIVATE KEY----- ... --
     key_content="$(prompt_secret "Paste OCI private key content (will be stored in Function App settings)")"
   fi
 fi
+# Normalize key_content (strip CR and trailing spaces)
+key_content="$(printf '%s' "$key_content" | tr -d '\r')"
 pass_phrase="$(prompt_default "OCI key pass phrase (blank if none)" "${pass_phrase:-}")"
 
 # Azure names
@@ -282,7 +284,7 @@ else
 fi
 
 # Flatten key_content to single line for app settings
-KEY_ONELINE="$(echo "$key_content" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
+KEY_ONELINE="$(printf '%s' "$key_content" | tr -d '\r' | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
 
 info "Configuring app settings..."
 az functionapp config appsettings set -g "$AZ_RG" -n "$AZ_FUNCTION_APP" --settings \
