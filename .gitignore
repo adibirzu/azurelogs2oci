@@ -35,3 +35,4 @@ Temporary Items
 # Local development
 .venv/
 .env
+.python_packages/
