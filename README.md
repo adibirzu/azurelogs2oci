@@ -45,7 +45,7 @@ High-level steps:
   - Azure CLI installed (az)
 - OCI
   - An OCI Streaming Stream
-  - OCI user with API signing keys (UPL license applies to this repository)
+  - OCI user with API signing keys
 - Local
   - zip or 7z for packaging the function
 
