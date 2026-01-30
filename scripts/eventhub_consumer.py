@@ -46,6 +46,16 @@ except Exception as e:
     print("⚠️  Missing OCI SDK. Install with: pip install oci")
     OCI_OK = False
 
+def _enrich(body: str) -> str:
+    """Inject cloud-provider tag so multicloud dashboards can filter by CSP."""
+    try:
+        obj = json.loads(body)
+        obj["cloudProvider"] = "Azure"
+        return json.dumps(obj, separators=(",", ":"))
+    except (json.JSONDecodeError, TypeError):
+        return body
+
+
 # ---------- OCI Sender ----------
 
 class OciStreamSender:
@@ -189,6 +199,8 @@ class EventHubDrainer:
             return
         try:
             body = event.body_as_str(encoding="utf-8")
+            # Enrich with cloud provider tag for multicloud dashboards
+            body = _enrich(body)
             self._last_event_ts = time.time()
             self.messages_processed += 1
 

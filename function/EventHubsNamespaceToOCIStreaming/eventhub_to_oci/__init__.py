@@ -172,6 +172,16 @@ class HubBuffer:
 # Removed unused polling functions - Event Hub trigger handles this automatically
 
 
+def _enrich(body: str) -> str:
+    """Inject cloud-provider tag so multicloud dashboards can filter by CSP."""
+    try:
+        obj = json.loads(body)
+        obj["cloudProvider"] = "Azure"
+        return json.dumps(obj, separators=(",", ":"))
+    except (json.JSONDecodeError, TypeError):
+        return body
+
+
 def mask(value: str, keep: int = 6) -> str:
     """Mask secrets for logging."""
     if not value:
@@ -262,6 +272,9 @@ def main(events: List[func.EventHubEvent]) -> None:
                 # Log first few characters for debugging (truncated)
                 preview = body[:100].replace('\n', ' ').replace('\r', ' ')
                 logging.debug(f"Event {i+1} content preview: {preview}{'...' if len(body) > 100 else ''}")
+
+                # Enrich with cloud provider tag for multicloud dashboards
+                body = _enrich(body)
 
                 # Add to buffer (will auto-flush based on size/count limits)
                 buffer.add(body)

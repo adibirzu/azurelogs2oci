@@ -57,6 +57,13 @@ prompt_secret() {
   echo "$var"
 }
 
+prompt_yn() {
+  local prompt="$1" default="${2:-y}" ans
+  read -r -p "$prompt [$default]: " ans
+  ans="${ans:-$default}"
+  [[ "$ans" =~ ^[Yy] ]]
+}
+
 require_cmd az
 require_cmd python3
 require_cmd zip
@@ -71,6 +78,23 @@ if [[ -f "$ENV_PATH" ]]; then
   set +a
   set -u
 fi
+
+# ── Ask about existing vs new resources ──────────────────────
+echo ""
+echo "============================================================"
+echo "  Azure → OCI Streaming Provisioning"
+echo "============================================================"
+echo ""
+USE_EXISTING_AZURE="n"
+USE_EXISTING_OCI="n"
+
+if prompt_yn "Use existing Azure Event Hub resources?" "n"; then
+  USE_EXISTING_AZURE="y"
+fi
+if prompt_yn "Use existing OCI Streaming resources?" "n"; then
+  USE_EXISTING_OCI="y"
+fi
+echo ""
 
 # Inputs with defaults
 RG_DEFAULT="${AZ_RG:-${RESOURCE_GROUP:-azurelogs2oci-rg}}"
@@ -101,6 +125,10 @@ PLAN_TYPE="$(prompt_required "Function plan type (consumption/premium)" "$PLAN_T
 # Ensure resource group exists before any downstream Azure operations
 info "Ensuring resource group exists..."
 az group create -n "$AZ_RG" -l "$AZ_LOCATION" >/dev/null
+
+if [[ "$USE_EXISTING_AZURE" == "y" ]]; then
+  info "Using existing Azure Event Hub resources."
+fi
 
 info "Fetching Event Hubs in namespace '$EVENTHUB_NAMESPACE'..."
 HUBS=()
@@ -140,32 +168,36 @@ EVENTHUB_NAMES_CSV="$(prompt_required "Comma-separated Event Hub names" "${EVENT
 EVENTHUB_CONSUMER_GROUP="$(prompt_required "Consumer group for function (leave \$Default if unsure)" "$EVENTHUB_CONSUMER_GROUP")"
 PRIMARY_EVENTHUB="$(echo "$EVENTHUB_NAMES_CSV" | cut -d',' -f1 | tr -d '[:space:]')"
 
-# Ensure Event Hub namespace and hubs exist (creates if missing)
-info "Ensuring Event Hubs namespace exists..."
-if ! az eventhubs namespace show --resource-group "$AZ_RG" --name "$EVENTHUB_NAMESPACE" >/dev/null 2>&1; then
-  az eventhubs namespace create --resource-group "$AZ_RG" --name "$EVENTHUB_NAMESPACE" --location "$AZ_LOCATION" >/dev/null
-  ok "Created Event Hubs namespace $EVENTHUB_NAMESPACE"
-else
-  ok "Namespace $EVENTHUB_NAMESPACE exists"
-fi
-
-IFS=',' read -r -a HUB_LIST <<<"$EVENTHUB_NAMES_CSV"
-for hub in "${HUB_LIST[@]}"; do
-  hub_trim="${hub//[[:space:]]/}"
-  [[ -z "$hub_trim" ]] && continue
-  if ! az eventhubs eventhub show --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --name "$hub_trim" >/dev/null 2>&1; then
-    az eventhubs eventhub create --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --name "$hub_trim" >/dev/null
-    ok "Created Event Hub $hub_trim"
+# Ensure Event Hub namespace and hubs exist (creates if missing, skips if using existing)
+if [[ "$USE_EXISTING_AZURE" != "y" ]]; then
+  info "Ensuring Event Hubs namespace exists..."
+  if ! az eventhubs namespace show --resource-group "$AZ_RG" --name "$EVENTHUB_NAMESPACE" >/dev/null 2>&1; then
+    az eventhubs namespace create --resource-group "$AZ_RG" --name "$EVENTHUB_NAMESPACE" --location "$AZ_LOCATION" >/dev/null
+    ok "Created Event Hubs namespace $EVENTHUB_NAMESPACE"
   else
-    ok "Event Hub $hub_trim exists"
+    ok "Namespace $EVENTHUB_NAMESPACE exists"
   fi
-  if [[ "$EVENTHUB_CONSUMER_GROUP" != "\$Default" ]]; then
-    if ! az eventhubs eventhub consumer-group show --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --eventhub-name "$hub_trim" --name "$EVENTHUB_CONSUMER_GROUP" >/dev/null 2>&1; then
-      az eventhubs eventhub consumer-group create --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --eventhub-name "$hub_trim" --name "$EVENTHUB_CONSUMER_GROUP" >/dev/null
-      ok "Created consumer group $EVENTHUB_CONSUMER_GROUP on $hub_trim"
+
+  IFS=',' read -r -a HUB_LIST <<<"$EVENTHUB_NAMES_CSV"
+  for hub in "${HUB_LIST[@]}"; do
+    hub_trim="${hub//[[:space:]]/}"
+    [[ -z "$hub_trim" ]] && continue
+    if ! az eventhubs eventhub show --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --name "$hub_trim" >/dev/null 2>&1; then
+      az eventhubs eventhub create --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --name "$hub_trim" >/dev/null
+      ok "Created Event Hub $hub_trim"
+    else
+      ok "Event Hub $hub_trim exists"
     fi
-  fi
-done
+    if [[ "$EVENTHUB_CONSUMER_GROUP" != "\$Default" ]]; then
+      if ! az eventhubs eventhub consumer-group show --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --eventhub-name "$hub_trim" --name "$EVENTHUB_CONSUMER_GROUP" >/dev/null 2>&1; then
+        az eventhubs eventhub consumer-group create --resource-group "$AZ_RG" --namespace-name "$EVENTHUB_NAMESPACE" --eventhub-name "$hub_trim" --name "$EVENTHUB_CONSUMER_GROUP" >/dev/null
+        ok "Created consumer group $EVENTHUB_CONSUMER_GROUP on $hub_trim"
+      fi
+    fi
+  done
+else
+  ok "Using existing Event Hub resources (namespace: $EVENTHUB_NAMESPACE)"
+fi
 
 # Resolve connection string with retries
 info "Resolving Event Hubs connection string from Azure..."
@@ -192,6 +224,9 @@ else
 fi
 
 # OCI inputs
+if [[ "$USE_EXISTING_OCI" == "y" ]]; then
+  info "Using existing OCI Streaming resources. Please provide connection details."
+fi
 MessageEndpoint="$(prompt_required "OCI message endpoint" "${MessageEndpoint:-https://cell-1.streaming.<region>.oci.oraclecloud.com}")"
 StreamOcid="$(prompt_required "OCI stream OCID (not stream pool)" "${StreamOcid:-ocid1.stream.oc1..xxxx}")"
 user="$(prompt_required "OCI user OCID" "${user:-ocid1.user.oc1..example}")"
@@ -339,6 +374,17 @@ fingerprint="$fingerprint"
 tenancy="$tenancy"
 region="$region"
 
+# OCI identifiers (used by setup_oci_log_analytics.sh)
+OCI_USER_OCID="$user"
+OCI_FINGERPRINT="$fingerprint"
+OCI_TENANCY_OCID="$tenancy"
+OCI_REGION="$region"
+OCI_KEY_CONTENT="$key_content"
+OCI_COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}"
+OCI_LOG_ANALYTICS_NAMESPACE="${OCI_LOG_ANALYTICS_NAMESPACE:-}"
+OCI_LOG_GROUP_NAME="${OCI_LOG_GROUP_NAME:-AzureLogs}"
+OCI_SCH_NAME="${OCI_SCH_NAME:-Azure-Stream-to-LogAnalytics}"
+
 # Azure app + storage
 AZ_RG="$AZ_RG"
 AZ_LOCATION="$AZ_LOCATION"
@@ -355,5 +401,38 @@ ok "Deployment complete."
 info "Function App: $AZ_FUNCTION_APP (RG: $AZ_RG, Location: $AZ_LOCATION)"
 info "Event Hubs namespace: $EVENTHUB_NAMESPACE | Hubs: $EVENTHUB_NAMES_CSV | Consumer group: $EVENTHUB_CONSUMER_GROUP"
 info "OCI stream: $StreamOcid @ $MessageEndpoint"
+
+# ── Optional: OCI Log Analytics end-to-end setup ─────────────
+echo ""
+echo "============================================================"
+echo "  OCI Log Analytics End-to-End Setup"
+echo "============================================================"
+echo ""
+info "The Azure Function is now deployed and forwarding events to OCI Streaming."
+info "To complete the pipeline to OCI Log Analytics, run setup_oci_log_analytics.sh."
+echo ""
+
+if prompt_yn "Set up OCI Log Analytics now? (creates Log Group, parser, source, SCH)" "y"; then
+  if [[ -z "${OCI_COMPARTMENT_OCID:-}" ]]; then
+    OCI_COMPARTMENT_OCID="$(prompt_required "OCI compartment OCID (required for Log Analytics)" "")"
+    export OCI_COMPARTMENT_OCID
+    # Update .env with compartment
+    echo "OCI_COMPARTMENT_OCID=\"$OCI_COMPARTMENT_OCID\"" >> "$ENV_PATH"
+  fi
+  export OCI_REGION="$region"
+  export OCI_USER_OCID="$user"
+  export OCI_FINGERPRINT="$fingerprint"
+  export OCI_TENANCY_OCID="$tenancy"
+  export OCI_KEY_CONTENT="$key_content"
+  export OCI_KEY_PASSPHRASE="${pass_phrase:-}"
+
+  info "Launching OCI Log Analytics setup..."
+  bash "$SCRIPT_DIR/setup_oci_log_analytics.sh"
+else
+  info "Skipping Log Analytics setup. You can run it later:"
+  info "  ./scripts/setup_oci_log_analytics.sh"
+fi
+
+echo ""
 info "Next: tail logs with 'az webapp log tail -g $AZ_RG -n $AZ_FUNCTION_APP'"
 info "       or with Functions Core Tools: 'func azure functionapp logstream $AZ_FUNCTION_APP --resource-group $AZ_RG' (not supported on Linux Consumption; use premium plan or Application Insights Live Metrics)"

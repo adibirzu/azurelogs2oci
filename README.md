@@ -2,21 +2,162 @@
 
 [![License: UPL](https://img.shields.io/badge/license-UPL-green)](https://img.shields.io/badge/license-UPL-green)
 
-Azure Event Hubs to Oracle Cloud Infrastructure (OCI) Streaming: a minimal, production-ready implementation based on the oracle-devrel repo template.
+Stream Azure Event Hub logs (e.g., Entra ID audit logs) end-to-end into Oracle Cloud Infrastructure Log Analytics — with a custom parser, multicloud tagging, and one-click OCI deployment.
 
-This repository contains:
-- An Event Hub-triggered Azure Function that forwards events to OCI Streaming (PutMessages API) with batching and base64 encoding.
-- Helper scripts for ad-hoc draining and validation.
-- Documentation, quickstarts, and a blog-style guide with console screenshots/placeholders.
+## Overview
 
-## Introduction
+This project implements an end-to-end log-shipping pipeline that extracts telemetry from **Azure Event Hubs** (Entra ID audit logs) and ingests it into **OCI Log Analytics** through **OCI Streaming** and **Service Connector Hub**, with a custom parser that maps all Azure EntraID audit structured fields.
 
-azurelogs2oci forwards Azure Event Hub logs (e.g., Entra ID audit logs) to OCI Streaming by:
-- Triggering directly from a chosen Event Hub (Function binding) using a namespace connection string + consumer group.
-- Batching records (1MB / count limits) and base64-encoding payloads as required by OCI.
-- Sending to a target OCI Streaming stream using API signing keys.
+```
+Azure Event Hub (EntraID Audit Logs)
+  → Azure Function (Event Hub trigger + Cloud Provider enrichment)
+  → OCI Streaming (Kafka-compatible)
+  → Service Connector Hub
+  → Log Analytics (Azure EntraID Audit parser, 26 field mappings)
+```
 
-## Getting Started
+## Repository Layout
+
+```
+├── function/EventHubsNamespaceToOCIStreaming/
+│   ├── eventhub_to_oci/__init__.py    # Function logic (trigger + OCI sender + enrichment)
+│   ├── eventhub_to_oci/function.json  # Event Hub trigger binding (real-time)
+│   ├── requirements.txt               # azure-functions, azure-eventhub, oci
+│   ├── host.json                      # Function host configuration
+│   ├── README.md                      # Details and operational notes
+│   └── QUICKSTART.md                  # Step-by-step deployment guide
+├── scripts/
+│   ├── provision_azure_to_oci.sh      # End-to-end provisioning (Azure + OCI + Log Analytics)
+│   ├── setup_oci_log_analytics.sh     # OCI Log Analytics setup (stream, log group, parser, source, SCH)
+│   ├── setup_eventhub_to_oci.sh       # Interactive helper to collect settings and write .env
+│   ├── drain_eventhub_to_oci.sh       # Ad-hoc drain from Event Hub to OCI
+│   └── eventhub_consumer.py           # Consumer helper used by the drain script
+├── stack/                             # OCI Resource Manager Stack (Terraform)
+│   ├── main.tf                        # Provider, data sources, resource blocks
+│   ├── variables.tf                   # Input variables
+│   ├── outputs.tf                     # Output values (OCIDs, endpoints)
+│   ├── iam.tf                         # IAM policies for Service Connector Hub
+│   ├── schema.yaml                    # OCI Console UI form definition
+│   └── scripts/
+│       └── setup_log_analytics.py     # Custom fields, parser, source (post-deploy)
+├── deploy/
+│   └── azuredeploy.json               # Azure portal template (custom deployment)
+├── docs/
+│   ├── EVENT_FORMAT_DOCUMENTATION.md  # Notes on expected event formats and metadata
+│   └── blog-azurelogs-to-oci-streaming.md  # Blog-ready walkthrough
+├── .env.example                       # Configuration template (copy to .env)
+└── LICENSE.txt                        # UPL v1.0
+```
+
+## Prerequisites
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| Azure CLI (`az`) | Latest | Azure resource provisioning |
+| Python | 3.11+ | Azure Function runtime, OCI field/parser creation |
+| `oci` CLI | Latest | OCI resource provisioning |
+| OCI Python SDK | >= 2.124.0 | Log Analytics parser/field creation |
+| `zip` or `7z` | Any | Packaging the function for deployment |
+| Terraform | >= 1.2.0 (Optional) | OCI Resource Manager Stack deployment |
+
+**Azure requirements:**
+- Event Hubs namespace with one or more hubs (e.g., Entra ID audit logs diagnostic setting)
+- Azure subscription with permission to create Function App + Storage
+
+**OCI requirements:**
+- Tenancy with Streaming and Log Analytics services enabled
+- API signing key configured (`~/.oci/config` or `OCI_KEY_FILE` / `OCI_KEY_CONTENT`)
+- IAM policies: user must manage streams, log-analytics, and service-connectors in the target compartment
+
+## Quick Start
+
+```bash
+# 1. Configure
+cp .env.example .env   # fill in Azure Event Hub + OCI values
+
+# 2. Option A: End-to-end provisioning (Azure + OCI + Log Analytics)
+./scripts/provision_azure_to_oci.sh
+
+# 2. Option B: Step-by-step
+#    a. Set up Azure/OCI settings interactively
+./scripts/setup_eventhub_to_oci.sh
+#    b. Set up OCI Log Analytics (stream, log group, parser, source, SCH)
+./scripts/setup_oci_log_analytics.sh
+
+# 3. Test end-to-end
+./scripts/drain_eventhub_to_oci.sh --from-beginning
+
+# 4. Verify in OCI Log Analytics Log Explorer
+#    Query: 'Cloud Provider' = 'Azure' | stats count by 'Azure Operation'
+```
+
+## OCI Resource Manager (Terraform) Deployment
+
+Deploy the OCI infrastructure directly from the OCI Console with the Resource Manager Stack:
+
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/oracle-devrel/azurelogs2oci/releases/latest/download/azurelogs2oci-stack.zip)
+
+### Manual Stack Deployment
+
+1. **Package the stack:**
+   ```bash
+   cd stack && zip -r ../azurelogs2oci-stack.zip . && cd ..
+   ```
+
+2. **Upload to OCI Resource Manager:**
+   - Navigate to **OCI Console > Developer Services > Resource Manager > Stacks**
+   - Click **Create Stack** > Upload `.zip` file
+   - Fill in the form (compartment, stream names, etc.)
+   - Click **Plan** then **Apply**
+
+3. **Create Log Analytics custom content** (parser, fields, source):
+   ```bash
+   export LA_NAMESPACE="<your-namespace>"
+   export OCI_COMPARTMENT_ID="<your-compartment-ocid>"
+   python3 stack/scripts/setup_log_analytics.py
+   ```
+
+4. **Or apply locally with Terraform:**
+   ```bash
+   cd stack
+   terraform init
+   terraform plan -var="compartment_ocid=ocid1.compartment..." \
+                  -var="region=us-ashburn-1" \
+                  -var="tenancy_ocid=ocid1.tenancy..."
+   terraform apply
+   ```
+
+The stack creates: Stream Pool, Stream, Log Analytics Log Group, Service Connector Hub, and IAM policies. The Python helper script handles Log Analytics custom content (22 fields, 26-mapping JSON parser, source) which has no Terraform provider support.
+
+## Azure EntraID Audit Log Parser
+
+The `setup_oci_log_analytics.sh` script (or `stack/scripts/setup_log_analytics.py` for Terraform deployments) creates a custom **Azure EntraID Audit JSON Parser** in OCI Log Analytics with **26 field mappings** covering the Azure EntraID [Unified Audit Log](https://learn.microsoft.com/en-us/purview/audit-log-activities) schema.
+
+The Azure Function injects `cloudProvider: "Azure"` into every log entry for multicloud dashboard filtering.
+
+### Field Categories (26 total)
+
+**Built-in** (4): Message, Severity, Time, Method
+
+**Multicloud** (1): Cloud Provider (`$.cloudProvider`)
+
+**Core EntraID Audit** (15): Time Generated, Event ID, Operation, Record Type, Result Status, User Type, User ID, User Key, Workload, Object ID, Client IP, Organization ID, Schema Version, Creation Time, AD Event Type
+
+**Actor / Target Context** (6): Actor Context ID, Actor IP Address, Inter Systems ID, Intra System ID, Target Context ID, Application ID
+
+### Example Query
+
+```
+'Cloud Provider' = 'Azure' | stats count by 'Azure Operation'
+```
+
+For multicloud environments with both `gcplogs2oci` and `azurelogs2oci`, use:
+
+```
+'Cloud Provider' in ('Azure', 'GCP') | stats count by 'Cloud Provider', msg
+```
+
+## Getting Started (Detailed)
 
 The fastest way to deploy is with the function-specific quickstart.
 
@@ -36,42 +177,14 @@ High-level steps:
 5) Zip-deploy the function folder and monitor logs.
 - The provision script auto-resolves the namespace connection string (RootManageSharedAccessKey), installs Python deps into `.python_packages`, and zips the function for deployment.
 
-## Prerequisites
+### Local Smoke Test
 
-- Azure
-  - Event Hubs namespace with one or more hubs
-  - Azure subscription and permission to create Function App + Storage
-  - Azure CLI installed (az)
-- OCI
-  - An OCI Streaming Stream
-  - OCI user with API signing keys
-- Local
-  - zip or 7z for packaging the function
-
-## Repository Layout
-
-- function/EventHubsNamespaceToOCIStreaming/
-  - eventhub_to_oci/__init__.py: Function logic (Event Hub trigger + OCI sender)
-  - eventhub_to_oci/function.json: Event Hub trigger binding (real-time)
-  - requirements.txt: azure-functions, azure-eventhub, oci
-  - host.json: Function host configuration
-  - README.md: Details and operational notes
-  - QUICKSTART.md: Step-by-step deployment guide
-- scripts/
-  - drain_eventhub_to_oci.sh: Ad-hoc drain from a hub or all hubs in a namespace to OCI
-  - eventhub_consumer.py: Consumer helper used by the drain script
-  - setup_eventhub_to_oci.sh: Interactive helper to collect Azure/OCI settings and write a local .env
-  - provision_azure_to_oci.sh: One-shot creator (RG, storage, Function App), sets app settings, packages, and deploys the function
-- docs/
-  - EVENT_FORMAT_DOCUMENTATION.md: Notes on expected event formats and metadata
-  - blog-azurelogs-to-oci-streaming.md: Blog-ready walkthrough
-
-Local smoke test
 - Copy .env.example to .env (kept out of git) and fill Event Hubs connection + OCI settings. Use the OCI *stream* OCID (not the stream pool OCID) in StreamOcid/OCI_STREAM_OCID; or run `./scripts/setup_eventhub_to_oci.sh` to auto-discover hubs and build .env interactively.
 - Run `./scripts/drain_eventhub_to_oci.sh --from-beginning` to drain locally and verify messages reach OCI Streaming.
-- For full provisioning + deployment from scratch, run `./scripts/provision_azure_to_oci.sh` (creates RG/storage/Function App, configures settings, zips, and deploys).
+- For full provisioning + deployment from scratch, run `./scripts/provision_azure_to_oci.sh` (creates RG/storage/Function App, configures settings, zips, deploys, and optionally sets up OCI Log Analytics).
 
-Tail function logs (CLI options)
+### Tail Function Logs (CLI)
+
 - `az webapp log tail -g <rg> -n <app>`
 - or `func azure functionapp logstream <app> --resource-group <rg>` if you have Functions Core Tools
 - Note: Azure CLI/Core Tools logstream is not supported on Linux Consumption. Use `--plan premium` during provisioning (EP1) or open Application Insights Live Metrics in the portal.
@@ -90,6 +203,8 @@ Tail function logs (CLI options)
 - Azure Functions: https://learn.microsoft.com/azure/azure-functions/
 - Azure Event Hubs: https://learn.microsoft.com/azure/event-hubs/
 - OCI Streaming: https://docs.oracle.com/en-us/iaas/Content/Streaming/home.htm
+- OCI Log Analytics: https://docs.oracle.com/en-us/iaas/logging-analytics/home.htm
+- OCI Resource Manager: https://docs.oracle.com/en-us/iaas/Content/ResourceManager/home.htm
 
 ## Contributing
 
@@ -110,19 +225,3 @@ Licensed under the Universal Permissive License (UPL), Version 1.0.
 See [LICENSE](LICENSE.txt) for more details.
 
 ORACLE AND ITS AFFILIATES DO NOT PROVIDE ANY WARRANTY WHATSOEVER, EXPRESS OR IMPLIED, FOR ANY SOFTWARE, MATERIAL OR CONTENT OF ANY KIND CONTAINED OR PRODUCED WITHIN THIS REPOSITORY, AND IN PARTICULAR SPECIFICALLY DISCLAIM ANY AND ALL IMPLIED WARRANTIES OF TITLE, NON-INFRINGEMENT, MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE.  FURTHERMORE, ORACLE AND ITS AFFILIATES DO NOT REPRESENT THAT ANY CUSTOMARY SECURITY REVIEW HAS BEEN PERFORMED WITH RESPECT TO ANY SOFTWARE, MATERIAL OR CONTENT CONTAINED OR PRODUCED WITHIN THIS REPOSITORY. IN ADDITION, AND WITHOUT LIMITING THE FOREGOING, THIRD PARTIES MAY HAVE POSTED SOFTWARE, MATERIAL OR CONTENT TO THIS REPOSITORY WITHOUT ANY REVIEW. USE AT YOUR OWN RISK.
-
-## Publishing
-
-You can publish this repository to GitHub under the desired organization/name (e.g., azurelogs2oci):
-
-- Create the empty repository in your GitHub org (e.g., https://github.com/<org>/azurelogs2oci)
-- Point this local clone at the new remote and push:
-
-```bash
-cd azurelogs2oci
-git remote remove origin
-git remote add origin git@github.com:<org>/azurelogs2oci.git
-git push -u origin main
-```
-
-Alternatively, use the GitHub CLI (gh) to create and push the repository.
