@@ -68,6 +68,12 @@ require_cmd az
 require_cmd python3
 require_cmd zip
 
+# Verify Azure CLI is logged in
+if ! az account show >/dev/null 2>&1; then
+  err "Azure CLI is not logged in. Run 'az login' first."
+  exit 1
+fi
+
 # Load existing env without failing on unset
 if [[ -f "$ENV_PATH" ]]; then
   info "Loading existing values from $ENV_PATH"

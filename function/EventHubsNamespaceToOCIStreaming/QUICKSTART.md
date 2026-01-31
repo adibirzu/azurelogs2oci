@@ -154,4 +154,27 @@ Repository cleanup status
   - drain_eventhub_to_oci.sh (ad-hoc drains; optional)
   - eventhub_consumer.py (ad-hoc drains; optional)
 
-That’s it — your Function App will poll the configured Event Hubs and forward messages to OCI Streaming on the defined schedule.
+That's it — your Function App will poll the configured Event Hubs and forward messages to OCI Streaming on the defined schedule.
+
+6) Complete the pipeline to OCI Log Analytics (optional)
+To get logs into OCI Log Analytics with a custom Azure EntraID parser (26 field mappings), run the OCI Log Analytics setup:
+
+Prerequisites:
+- oci CLI installed and configured (oci setup config)
+- OCI Python SDK installed (pip install oci)
+- Log Analytics onboarded in your OCI tenancy (one-time: OCI Console > Observability & Management > Log Analytics)
+
+Option A — Interactive script:
+  ./scripts/setup_oci_log_analytics.sh
+
+Option B — OCI Resource Manager Stack (Terraform):
+  cd stack && zip -r ../azurelogs2oci-stack.zip . && cd ..
+  # Upload to OCI Console > Resource Manager > Stacks
+  # Then run the post-deploy script:
+  export LA_NAMESPACE="<namespace>" OCI_COMPARTMENT_ID="<compartment-ocid>"
+  python3 stack/scripts/setup_log_analytics.py
+
+This creates: Stream Pool, Stream, Log Group, custom fields (22), JSON parser (26 mappings), source, and Service Connector Hub. The Function enriches every log with cloudProvider: "Azure" for multicloud dashboards.
+
+Verify in OCI Log Analytics Log Explorer:
+  'Cloud Provider' = 'Azure' | stats count by 'Azure Operation'

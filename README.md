@@ -63,31 +63,38 @@ Azure Event Hub (EntraID Audit Logs)
 **Azure requirements:**
 - Event Hubs namespace with one or more hubs (e.g., Entra ID audit logs diagnostic setting)
 - Azure subscription with permission to create Function App + Storage
+- Authenticated via `az login` before running provisioning scripts
 
 **OCI requirements:**
 - Tenancy with Streaming and Log Analytics services enabled
+- **Log Analytics must be onboarded** in your tenancy (one-time: OCI Console > Observability & Management > Log Analytics > click "Start Using Log Analytics"). If not onboarded, namespace auto-detection will fail.
 - API signing key configured (`~/.oci/config` or `OCI_KEY_FILE` / `OCI_KEY_CONTENT`)
 - IAM policies: user must manage streams, log-analytics, and service-connectors in the target compartment
+- OCI Python SDK installed (`pip install oci`) — required by the parser/field creation scripts
 
 ## Quick Start
 
 ```bash
-# 1. Configure
-cp .env.example .env   # fill in Azure Event Hub + OCI values
+# 1. Prerequisites
+az login                        # authenticate Azure CLI
+pip install oci                 # OCI Python SDK (for Log Analytics setup)
 
-# 2. Option A: End-to-end provisioning (Azure + OCI + Log Analytics)
+# 2. Configure
+cp .env.example .env            # fill in Azure Event Hub + OCI values
+
+# 3. Option A: End-to-end provisioning (Azure + OCI + Log Analytics)
 ./scripts/provision_azure_to_oci.sh
 
-# 2. Option B: Step-by-step
+# 3. Option B: Step-by-step
 #    a. Set up Azure/OCI settings interactively
 ./scripts/setup_eventhub_to_oci.sh
 #    b. Set up OCI Log Analytics (stream, log group, parser, source, SCH)
 ./scripts/setup_oci_log_analytics.sh
 
-# 3. Test end-to-end
+# 4. Test end-to-end
 ./scripts/drain_eventhub_to_oci.sh --from-beginning
 
-# 4. Verify in OCI Log Analytics Log Explorer
+# 5. Verify in OCI Log Analytics Log Explorer
 #    Query: 'Cloud Provider' = 'Azure' | stats count by 'Azure Operation'
 ```
 
@@ -112,10 +119,12 @@ Deploy the OCI infrastructure directly from the OCI Console with the Resource Ma
 
 3. **Create Log Analytics custom content** (parser, fields, source):
    ```bash
+   pip install oci                # OCI Python SDK (if not already installed)
    export LA_NAMESPACE="<your-namespace>"
    export OCI_COMPARTMENT_ID="<your-compartment-ocid>"
    python3 stack/scripts/setup_log_analytics.py
    ```
+   The script auto-detects auth from OCI Resource Principal, `~/.oci/config`, or environment variables. Source creation also requires the `oci` CLI.
 
 4. **Or apply locally with Terraform:**
    ```bash

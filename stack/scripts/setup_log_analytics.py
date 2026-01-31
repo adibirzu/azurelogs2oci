@@ -14,6 +14,10 @@
 #   2. OCI config file         (~/.oci/config)
 #   3. Environment variables   (OCI_USER_OCID, OCI_KEY_FILE, etc.)
 #
+# Prerequisites:
+#   pip install oci     - OCI Python SDK (for field/parser creation)
+#   oci CLI             - required for source creation (shells out to oci CLI)
+#
 # Required environment variables:
 #   LA_NAMESPACE        - Log Analytics namespace
 #   OCI_COMPARTMENT_ID  - Compartment OCID (for source creation)

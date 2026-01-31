@@ -36,5 +36,12 @@ Temporary Items
 .venv/
 .env
 .python_packages/
+__pycache__/
+*.pyc
 azurelogs2oci-function.zip
+azurelogs2oci-stack.zip
 .env.local
+*.tfstate
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl

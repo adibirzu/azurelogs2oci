@@ -67,6 +67,12 @@ prompt_yn() {
 require_cmd oci
 require_cmd python3
 
+# Verify OCI Python SDK is installed (required for field/parser creation)
+if ! python3 -c "import oci" 2>/dev/null; then
+  err "OCI Python SDK not found. Install it with: pip install oci"
+  exit 1
+fi
+
 # Load existing env
 if [[ -f "$ENV_PATH" ]]; then
   info "Loading existing values from $ENV_PATH"
@@ -145,7 +151,10 @@ if [[ -z "$NAMESPACE" ]]; then
       --compartment-id "$OCI_COMPARTMENT_OCID" \
       --query 'data.items[0]."namespace-name"' --raw-output 2>/dev/null || true)
   if [[ -z "$NAMESPACE" || "$NAMESPACE" == "null" ]]; then
-    err "Could not detect Log Analytics namespace. Set OCI_LOG_ANALYTICS_NAMESPACE."
+    err "Could not detect Log Analytics namespace."
+    err "Ensure Log Analytics is onboarded in your tenancy:"
+    err "  OCI Console > Observability & Management > Log Analytics > 'Start Using Log Analytics'"
+    err "Or set OCI_LOG_ANALYTICS_NAMESPACE explicitly."
     exit 1
   fi
   ok "Namespace: $NAMESPACE"
