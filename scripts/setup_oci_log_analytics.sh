@@ -343,13 +343,28 @@ JSONEOF
 }
 JSONEOF
 
-  SCH_ID=$(oci sch service-connector create \
+  # SCH create is async (returns work request, not resource).
+  # Fire the create, then look up the OCID by display name.
+  oci sch service-connector create \
       --compartment-id "$OCI_COMPARTMENT_ID" \
       --display-name "$SCH_NAME" \
       --description "Forwards Azure EntraID Audit logs from OCI Streaming to Log Analytics ($LOG_GROUP_NAME group) using Azure EntraID parser" \
       --source file:///tmp/azure_sch_source.json \
       --target file:///tmp/azure_sch_target.json \
-      --query 'data.id' --raw-output 2>&1 || true)
+      >/dev/null 2>&1 || true
+
+  # Wait briefly, then resolve the OCID from the list API
+  info "Waiting for SCH to appear..."
+  local attempts=0
+  SCH_ID=""
+  while [[ -z "$SCH_ID" || "$SCH_ID" == "null" ]] && [[ $attempts -lt 12 ]]; do
+    sleep 5
+    SCH_ID=$(oci sch service-connector list \
+        --compartment-id "$OCI_COMPARTMENT_ID" \
+        --display-name "$SCH_NAME" \
+        --query 'data.items[0].id' --raw-output 2>/dev/null || true)
+    ((attempts++))
+  done
 
   if [[ -n "$SCH_ID" && "$SCH_ID" != "null" ]]; then
     ok "SCH created: ${SCH_ID:0:50}..."

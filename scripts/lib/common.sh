@@ -87,11 +87,12 @@ update_env_var() {
 
   if grep -q "^${key}=" "$env_file" 2>/dev/null; then
     # Update existing line (temp-file approach avoids sed -i portability issues)
+    # Use single quotes to prevent command substitution when .env is source'd
     local tmpfile
     tmpfile="$(mktemp)"
     while IFS= read -r line || [[ -n "$line" ]]; do
       if [[ "$line" == "${key}="* ]]; then
-        printf '%s\n' "${key}=\"${value}\""
+        printf "%s='%s'\n" "${key}" "${value}"
       else
         printf '%s\n' "$line"
       fi
@@ -99,6 +100,6 @@ update_env_var() {
     mv "$tmpfile" "$env_file"
   else
     # Append new entry
-    printf '%s\n' "${key}=\"${value}\"" >> "$env_file"
+    printf "%s='%s'\n" "${key}" "${value}" >> "$env_file"
   fi
 }
