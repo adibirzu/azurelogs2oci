@@ -9,12 +9,12 @@ output "stream_pool_id" {
 }
 
 output "stream_id" {
-  description = "OCID of the Stream (use as OCI_STREAM_OCID / StreamOcid)"
+  description = "OCID of the Stream (use as OCI_STREAM_OCID)"
   value       = oci_streaming_stream.azure_stream.id
 }
 
 output "stream_messaging_endpoint" {
-  description = "Stream messaging endpoint URL (use as OCI_MESSAGE_ENDPOINT / MessageEndpoint)"
+  description = "Stream messaging endpoint URL (use as OCI_MESSAGE_ENDPOINT)"
   value       = oci_streaming_stream.azure_stream.messages_endpoint
 }
 
@@ -40,7 +40,7 @@ output "service_connector_id" {
 
 output "env_snippet" {
   description = "Ready-to-paste values for .env"
-  value = <<-EOT
+  value       = <<-EOT
     OCI_STREAM_OCID=${oci_streaming_stream.azure_stream.id}
     OCI_STREAM_POOL_ID=${oci_streaming_stream_pool.azure_pool.id}
     OCI_MESSAGE_ENDPOINT=${oci_streaming_stream.azure_stream.messages_endpoint}

@@ -69,7 +69,8 @@ def get_client():
         with open(os.path.expanduser(key_file)) as f:
             key_pem = f.read()
     elif key_content:
-        key_pem = key_content
+        # Normalize PEM: handle escaped newlines from .env files
+        key_pem = key_content.replace("\\n", "\n").strip()
     else:
         print("ERROR: No OCI credentials found.")
         print("  Set OCI config file (~/.oci/config), OCI_KEY_FILE, or")

@@ -28,10 +28,14 @@ Azure Event Hub (EntraID Audit Logs)
 │   ├── README.md                      # Details and operational notes
 │   └── QUICKSTART.md                  # Step-by-step deployment guide
 ├── scripts/
+│   ├── lib/common.sh                  # Shared helpers (logging, prompts, env management)
+│   ├── discover_resources.sh          # Azure + OCI backend resource discovery
 │   ├── provision_azure_to_oci.sh      # End-to-end provisioning (Azure + OCI + Log Analytics)
 │   ├── setup_oci_log_analytics.sh     # OCI Log Analytics setup (stream, log group, parser, source, SCH)
 │   ├── setup_eventhub_to_oci.sh       # Interactive helper to collect settings and write .env
 │   ├── drain_eventhub_to_oci.sh       # Ad-hoc drain from Event Hub to OCI
+│   ├── teardown_azurelogs2oci.sh      # Destroy Azure + OCI resources (reverse of setup)
+│   ├── teardown_oci_log_analytics.py  # Delete LA custom content (source, parser, fields)
 │   └── eventhub_consumer.py           # Consumer helper used by the drain script
 ├── stack/                             # OCI Resource Manager Stack (Terraform)
 │   ├── main.tf                        # Provider, data sources, resource blocks
@@ -98,6 +102,34 @@ cp .env.example .env            # fill in Azure Event Hub + OCI values
 # 5. Verify in OCI Log Analytics Log Explorer
 #    Query: 'Cloud Provider' = 'Azure' | stats count by 'Azure Operation'
 ```
+
+## Teardown / Cleanup
+
+Remove all provisioned Azure and OCI resources when you're done testing or want a fresh start.
+
+```bash
+# Delete all Azure + OCI resources
+./scripts/teardown_azurelogs2oci.sh
+
+# OCI only
+./scripts/teardown_azurelogs2oci.sh --oci-only
+
+# Azure only
+./scripts/teardown_azurelogs2oci.sh --azure-only
+
+# Preview without deleting
+./scripts/teardown_azurelogs2oci.sh --dry-run
+
+# Keep resource group but delete contained Azure resources
+./scripts/teardown_azurelogs2oci.sh --azure-only --keep-rg
+
+# Keep Log Analytics fields (shared with other pipelines like gcplogs2oci)
+./scripts/teardown_azurelogs2oci.sh --oci-only --keep-fields
+```
+
+The teardown script sources `.env` to discover resource IDs and names automatically. It deletes resources in reverse dependency order (SCH first, then Stream Pool last) and handles already-deleted resources gracefully.
+
+The setup scripts (`setup_oci_log_analytics.sh`, `provision_azure_to_oci.sh`) also offer a built-in **destroy & recreate** option: run the setup script and choose option `[3]` from the discovery menu to tear down existing resources inline before creating new ones.
 
 ## OCI Resource Manager (Terraform) Deployment
 

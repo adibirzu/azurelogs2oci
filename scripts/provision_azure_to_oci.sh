@@ -10,59 +10,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_PATH="$REPO_ROOT/.env"
 FUNCTION_PATH="$REPO_ROOT/function/EventHubsNamespaceToOCIStreaming"
 
-info() { printf "ℹ️  %s\n" "$*"; }
-ok()   { printf "✅ %s\n" "$*"; }
-warn() { printf "⚠️  %s\n" "$*" >&2; }
-err()  { printf "❌ %s\n" "$*" >&2; }
-
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    err "Missing required command: $1"
-    exit 1
-  fi
-}
-
-prompt_default() {
-  local prompt="$1" default="$2" var
-  read -r -p "$prompt [$default]: " var
-  if [[ -z "$var" ]]; then
-    echo "$default"
-  else
-    echo "$var"
-  fi
-}
-
-prompt_required() {
-  local prompt="$1" default="${2:-}"
-  local val=""
-  while true; do
-    read -r -p "$prompt${default:+ [$default]}: " val
-    if [[ -z "$val" ]]; then
-      if [[ -n "$default" ]]; then
-        val="$default"
-        break
-      fi
-      warn "This value is required."
-      continue
-    fi
-    break
-  done
-  echo "$val"
-}
-
-prompt_secret() {
-  local prompt="$1" var
-  read -r -s -p "$prompt: " var
-  echo
-  echo "$var"
-}
-
-prompt_yn() {
-  local prompt="$1" default="${2:-y}" ans
-  read -r -p "$prompt [$default]: " ans
-  ans="${ans:-$default}"
-  [[ "$ans" =~ ^[Yy] ]]
-}
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+# shellcheck source=discover_resources.sh
+source "$SCRIPT_DIR/discover_resources.sh"
 
 require_cmd az
 require_cmd python3
@@ -75,31 +26,13 @@ if ! az account show >/dev/null 2>&1; then
 fi
 
 # Load existing env without failing on unset
-if [[ -f "$ENV_PATH" ]]; then
-  info "Loading existing values from $ENV_PATH"
-  set +u
-  set -a
-  # shellcheck disable=SC1090
-  source "$ENV_PATH"
-  set +a
-  set -u
-fi
+load_env "$ENV_PATH"
 
-# ── Ask about existing vs new resources ──────────────────────
+# ── Collect basic Azure parameters ────────────────────────────
 echo ""
 echo "============================================================"
 echo "  Azure → OCI Streaming Provisioning"
 echo "============================================================"
-echo ""
-USE_EXISTING_AZURE="n"
-USE_EXISTING_OCI="n"
-
-if prompt_yn "Use existing Azure Event Hub resources?" "n"; then
-  USE_EXISTING_AZURE="y"
-fi
-if prompt_yn "Use existing OCI Streaming resources?" "n"; then
-  USE_EXISTING_OCI="y"
-fi
 echo ""
 
 # Inputs with defaults
@@ -114,8 +47,8 @@ EVENTHUB_NAMESPACE="${EVENTHUB_NAMESPACE:-}"
 EVENTHUB_CONSUMER_GROUP="${EventHubConsumerGroup:-${EVENTHUB_CONSUMER_GROUP:-\$Default}}"
 EVENTHUB_NAMES_CSV="${EventHubNamesCsv:-${EVENTHUB_NAME:-}}"
 
-MessageEndpoint="${MessageEndpoint:-${OCI_MESSAGE_ENDPOINT:-}}"
-StreamOcid="${StreamOcid:-${OCI_STREAM_OCID:-}}"
+OCI_MESSAGE_ENDPOINT="${OCI_MESSAGE_ENDPOINT:-${MessageEndpoint:-}}"
+OCI_STREAM_OCID="${OCI_STREAM_OCID:-${StreamOcid:-}}"
 user="${user:-}"
 key_content="${key_content:-}"
 pass_phrase="${pass_phrase:-}"
@@ -128,12 +61,53 @@ AZ_LOCATION="$(prompt_required "Azure location" "$LOC_DEFAULT")"
 EVENTHUB_NAMESPACE="$(prompt_required "Event Hubs namespace" "${EVENTHUB_NAMESPACE:-<namespace>}")"
 PLAN_TYPE="$(prompt_required "Function plan type (consumption/premium)" "$PLAN_TYPE_DEFAULT")"
 
+# ── Discover existing Azure resources ─────────────────────────
+discover_azure_resources || true
+
+AZURE_MODE="create"  # create | reuse | destroy
+
+AZURE_FOUND=0
+[[ "$DISC_AZ_RG_EXISTS" == "true" ]] && ((AZURE_FOUND++)) || true
+[[ "$DISC_AZ_EVENTHUB_NS_EXISTS" == "true" ]] && ((AZURE_FOUND++)) || true
+[[ "$DISC_AZ_FUNCTION_APP_EXISTS" == "true" ]] && ((AZURE_FOUND++)) || true
+
+if [[ $AZURE_FOUND -gt 0 ]]; then
+  show_discovery_summary "azure"
+
+  echo "Existing Azure resources found ($AZURE_FOUND)."
+  echo ""
+  echo "  [1] Use existing resources (reuse what's found)"
+  echo "  [2] Create new resources (prompted for new names)"
+  echo "  [3] Destroy existing and recreate"
+  echo ""
+  read -r -p "Choose [1/2/3] (default: 1): " az_choice
+  az_choice="${az_choice:-1}"
+
+  case "$az_choice" in
+    1) AZURE_MODE="reuse" ;;
+    2) AZURE_MODE="create" ;;
+    3) AZURE_MODE="destroy" ;;
+    *) warn "Invalid choice; defaulting to [1] reuse."; AZURE_MODE="reuse" ;;
+  esac
+fi
+
+# Handle destroy mode
+if [[ "$AZURE_MODE" == "destroy" ]]; then
+  warn "Destroying existing Azure resources..."
+  if [[ "$DISC_AZ_RG_EXISTS" == "true" ]]; then
+    info "Deleting resource group $AZ_RG (cascades to all resources)..."
+    az group delete -n "$AZ_RG" --yes 2>/dev/null || true
+    ok "Resource group deleted"
+  fi
+  AZURE_MODE="create"
+fi
+
 # Ensure resource group exists before any downstream Azure operations
 info "Ensuring resource group exists..."
 az group create -n "$AZ_RG" -l "$AZ_LOCATION" >/dev/null
 
-if [[ "$USE_EXISTING_AZURE" == "y" ]]; then
-  info "Using existing Azure Event Hub resources."
+if [[ "$AZURE_MODE" == "reuse" ]]; then
+  info "Reusing existing Azure Event Hub resources."
 fi
 
 info "Fetching Event Hubs in namespace '$EVENTHUB_NAMESPACE'..."
@@ -174,8 +148,8 @@ EVENTHUB_NAMES_CSV="$(prompt_required "Comma-separated Event Hub names" "${EVENT
 EVENTHUB_CONSUMER_GROUP="$(prompt_required "Consumer group for function (leave \$Default if unsure)" "$EVENTHUB_CONSUMER_GROUP")"
 PRIMARY_EVENTHUB="$(echo "$EVENTHUB_NAMES_CSV" | cut -d',' -f1 | tr -d '[:space:]')"
 
-# Ensure Event Hub namespace and hubs exist (creates if missing, skips if using existing)
-if [[ "$USE_EXISTING_AZURE" != "y" ]]; then
+# Ensure Event Hub namespace and hubs exist (creates if missing, skips if reusing)
+if [[ "$AZURE_MODE" != "reuse" ]]; then
   info "Ensuring Event Hubs namespace exists..."
   if ! az eventhubs namespace show --resource-group "$AZ_RG" --name "$EVENTHUB_NAMESPACE" >/dev/null 2>&1; then
     az eventhubs namespace create --resource-group "$AZ_RG" --name "$EVENTHUB_NAMESPACE" --location "$AZ_LOCATION" >/dev/null
@@ -230,11 +204,8 @@ else
 fi
 
 # OCI inputs
-if [[ "$USE_EXISTING_OCI" == "y" ]]; then
-  info "Using existing OCI Streaming resources. Please provide connection details."
-fi
-MessageEndpoint="$(prompt_required "OCI message endpoint" "${MessageEndpoint:-https://cell-1.streaming.<region>.oci.oraclecloud.com}")"
-StreamOcid="$(prompt_required "OCI stream OCID (not stream pool)" "${StreamOcid:-ocid1.stream.oc1..xxxx}")"
+OCI_MESSAGE_ENDPOINT="$(prompt_required "OCI message endpoint" "${OCI_MESSAGE_ENDPOINT:-https://cell-1.streaming.<region>.oci.oraclecloud.com}")"
+OCI_STREAM_OCID="$(prompt_required "OCI stream OCID (not stream pool)" "${OCI_STREAM_OCID:-ocid1.stream.oc1..xxxx}")"
 user="$(prompt_required "OCI user OCID" "${user:-ocid1.user.oc1..example}")"
 fingerprint="$(prompt_required "OCI API key fingerprint" "${fingerprint:-<fingerprint>}")"
 tenancy="$(prompt_required "OCI tenancy OCID" "${tenancy:-ocid1.tenancy.oc1..example}")"
@@ -325,7 +296,7 @@ else
 fi
 
 # Flatten key_content to single line for app settings
-KEY_ONELINE="$(printf '%s' "$key_content" | tr -d '\r' | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g')"
+KEY_ONELINE="$(printf '%s' "$key_content" | tr -d '\r' | tr '\n' ' ' | sed -E 's/[[:space:]]+/ /g')"
 
 info "Configuring app settings..."
 az functionapp config appsettings set -g "$AZ_RG" -n "$AZ_FUNCTION_APP" --settings \
@@ -333,8 +304,8 @@ az functionapp config appsettings set -g "$AZ_RG" -n "$AZ_FUNCTION_APP" --settin
   EventHubConsumerGroup="$EVENTHUB_CONSUMER_GROUP" \
   EventHubName="$PRIMARY_EVENTHUB" \
   EventHubNamesCsv="$EVENTHUB_NAMES_CSV" \
-  MessageEndpoint="$MessageEndpoint" \
-  StreamOcid="$StreamOcid" \
+  MessageEndpoint="$OCI_MESSAGE_ENDPOINT" \
+  StreamOcid="$OCI_STREAM_OCID" \
   user="$user" \
   key_content="$KEY_ONELINE" \
   pass_phrase="$pass_phrase" \
@@ -350,7 +321,7 @@ TMP_ZIP="$TMP_DIR/azurelogs2oci.zip"
 pushd "$FUNCTION_PATH" >/dev/null
 # Remove any local .python_packages to avoid bundling platform-specific wheels
 rm -rf .python_packages
-zip -qry "$TMP_ZIP" .
+zip -qry "$TMP_ZIP" . -x ".venv/*" "__pycache__/*" "*/__pycache__/*" "*.pyc" ".python_packages/*" ".funcignore" "local.settings.json"
 popd >/dev/null
 
 info "Deploying zip to Function App with remote build (Oryx)..."
@@ -367,10 +338,8 @@ EventHubNamesCsv="$EVENTHUB_NAMES_CSV"
 EVENTHUB_RG="$AZ_RG"
 EVENTHUB_NAMESPACE="$EVENTHUB_NAMESPACE"
 
-MessageEndpoint="$MessageEndpoint"
-StreamOcid="$StreamOcid"
-OCI_MESSAGE_ENDPOINT="$MessageEndpoint"
-OCI_STREAM_OCID="$StreamOcid"
+OCI_MESSAGE_ENDPOINT="$OCI_MESSAGE_ENDPOINT"
+OCI_STREAM_OCID="$OCI_STREAM_OCID"
 
 user="$user"
 key_content="$key_content"
@@ -386,10 +355,14 @@ OCI_FINGERPRINT="$fingerprint"
 OCI_TENANCY_OCID="$tenancy"
 OCI_REGION="$region"
 OCI_KEY_CONTENT="$key_content"
-OCI_COMPARTMENT_OCID="${OCI_COMPARTMENT_OCID:-}"
+OCI_COMPARTMENT_ID="${OCI_COMPARTMENT_ID:-${OCI_COMPARTMENT_OCID:-}}"
 OCI_LOG_ANALYTICS_NAMESPACE="${OCI_LOG_ANALYTICS_NAMESPACE:-}"
 OCI_LOG_GROUP_NAME="${OCI_LOG_GROUP_NAME:-AzureLogs}"
 OCI_SCH_NAME="${OCI_SCH_NAME:-Azure-Stream-to-LogAnalytics}"
+OCI_STREAM_POOL_ID="${OCI_STREAM_POOL_ID:-}"
+OCI_STREAM_POOL_NAME="${OCI_STREAM_POOL_NAME:-MultiCloud_Log_Pool}"
+OCI_LOG_GROUP_ID="${OCI_LOG_GROUP_ID:-}"
+OCI_SCH_ID="${OCI_SCH_ID:-}"
 
 # Azure app + storage
 AZ_RG="$AZ_RG"
@@ -406,7 +379,7 @@ EOF
 ok "Deployment complete."
 info "Function App: $AZ_FUNCTION_APP (RG: $AZ_RG, Location: $AZ_LOCATION)"
 info "Event Hubs namespace: $EVENTHUB_NAMESPACE | Hubs: $EVENTHUB_NAMES_CSV | Consumer group: $EVENTHUB_CONSUMER_GROUP"
-info "OCI stream: $StreamOcid @ $MessageEndpoint"
+info "OCI stream: $OCI_STREAM_OCID @ $OCI_MESSAGE_ENDPOINT"
 
 # ── Optional: OCI Log Analytics end-to-end setup ─────────────
 echo ""
@@ -419,11 +392,11 @@ info "To complete the pipeline to OCI Log Analytics, run setup_oci_log_analytics
 echo ""
 
 if prompt_yn "Set up OCI Log Analytics now? (creates Log Group, parser, source, SCH)" "y"; then
-  if [[ -z "${OCI_COMPARTMENT_OCID:-}" ]]; then
-    OCI_COMPARTMENT_OCID="$(prompt_required "OCI compartment OCID (required for Log Analytics)" "")"
-    export OCI_COMPARTMENT_OCID
+  if [[ -z "${OCI_COMPARTMENT_ID:-}" ]]; then
+    OCI_COMPARTMENT_ID="$(prompt_required "OCI compartment OCID (required for Log Analytics)" "")"
+    export OCI_COMPARTMENT_ID
     # Update .env with compartment
-    echo "OCI_COMPARTMENT_OCID=\"$OCI_COMPARTMENT_OCID\"" >> "$ENV_PATH"
+    update_env_var "OCI_COMPARTMENT_ID" "$OCI_COMPARTMENT_ID" "$ENV_PATH"
   fi
   export OCI_REGION="$region"
   export OCI_USER_OCID="$user"

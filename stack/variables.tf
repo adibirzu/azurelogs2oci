@@ -92,3 +92,32 @@ variable "policy_compartment_name" {
   type        = string
   default     = ""
 }
+
+# --- Compute (future extensibility) ---
+# These variables are not used by the current serverless stack but are
+# provided so that adding a compute instance later (e.g. a self-hosted
+# log forwarder) requires only resource blocks, not new variables.
+
+variable "compute_shape" {
+  description = "Compute instance shape for optional future instances (VM.Standard.E5.Flex, VM.Standard.E4.Flex, VM.Standard.A2.Flex, VM.Standard.A1.Flex, VM.Standard3.Flex, VM.Optimized3.Flex)"
+  type        = string
+  default     = "VM.Standard.E5.Flex"
+}
+
+variable "compute_ocpus" {
+  description = "Number of OCPUs for flex compute shapes (1-64)"
+  type        = number
+  default     = 1
+}
+
+variable "compute_memory_in_gbs" {
+  description = "Memory in GBs for flex compute shapes (1-1024)"
+  type        = number
+  default     = 16
+}
+
+variable "compute_image_id" {
+  description = "Custom image OCID for future compute instances (leave empty to use platform images)"
+  type        = string
+  default     = ""
+}

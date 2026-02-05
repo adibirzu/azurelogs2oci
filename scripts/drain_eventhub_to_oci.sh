@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #===============================================================================
 # Drain Azure Event Hub to OCI Streaming - End-to-End Automated Test
 # - Installs required SDKs if missing
@@ -9,19 +9,23 @@
 #===============================================================================
 set -e
 
-# Colors
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
+
+# Colors (drain script uses colored output for terminal UX)
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-info() { echo -e "${BLUE}ℹ️  $1${NC}"; }
-ok()   { echo -e "${GREEN}✅ $1${NC}"; }
-warn() { echo -e "${YELLOW}⚠️  $1${NC}"; }
-err()  { echo -e "${RED}❌ $1${NC}"; }
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Override with colored variants for this script
+info() { printf "${BLUE}ℹ️  %s${NC}\n" "$1"; }
+ok()   { printf "${GREEN}✅ %s${NC}\n" "$1"; }
+warn() { printf "${YELLOW}⚠️  %s${NC}\n" "$1"; }
+err()  { printf "${RED}❌ %s${NC}\n" "$1"; }
 
 # Defaults (override via flags or env)
 EVENTHUB_RG="${EVENTHUB_RG:-StreamingLogsOCI_group}"
@@ -180,9 +184,9 @@ done
 
 prompt_eventhub_if_missing
 
-echo -e "${GREEN}===============================================================================${NC}"
-echo -e "${GREEN}🚀 Drain Azure Event Hub → OCI Streaming (Automated)${NC}"
-echo -e "${GREEN}===============================================================================${NC}"
+printf "${GREEN}===============================================================================${NC}\n"
+printf "${GREEN}🚀 Drain Azure Event Hub → OCI Streaming (Automated)${NC}\n"
+printf "${GREEN}===============================================================================${NC}\n"
 
 # Check Azure CLI
 if ! command -v az >/dev/null 2>&1; then
@@ -280,7 +284,10 @@ if [[ "$ALL_EVENTHUBS" == true ]]; then
     err "Azure CLI is required to list Event Hubs. Install Azure CLI."
     exit 1
   fi
-  mapfile -t EH_LIST < <(az eventhubs eventhub list \
+  EH_LIST=()
+  while IFS= read -r line; do
+    [[ -n "$line" ]] && EH_LIST+=("$line")
+  done < <(az eventhubs eventhub list \
     --resource-group "$EVENTHUB_RG" \
     --namespace-name "$EVENTHUB_NAMESPACE" \
     --query "[].name" \
@@ -326,9 +333,9 @@ if [[ "$ALL_EVENTHUBS" == true ]]; then
   done
 
   echo ""
-  echo -e "${GREEN}===============================================================================${NC}"
-  echo -e "${GREEN}🎉 Completed: Namespace drain ($EVENTHUB_NAMESPACE → OCI Streaming)${NC}"
-  echo -e "${GREEN}===============================================================================${NC}"
+  printf "${GREEN}===============================================================================${NC}\n"
+  printf "${GREEN}🎉 Completed: Namespace drain (%s → OCI Streaming)${NC}\n" "$EVENTHUB_NAMESPACE"
+  printf "${GREEN}===============================================================================${NC}\n"
   exit $OVERALL_RC
 fi
 
@@ -376,9 +383,9 @@ fi
 ok "Drain step completed"
 
 echo ""
-echo -e "${GREEN}===============================================================================${NC}"
-echo -e "${GREEN}🎉 Completed: Event Hub → OCI Streaming drain${NC}"
-echo -e "${GREEN}===============================================================================${NC}"
+printf "${GREEN}===============================================================================${NC}\n"
+printf "${GREEN}🎉 Completed: Event Hub → OCI Streaming drain${NC}\n"
+printf "${GREEN}===============================================================================${NC}\n"
 echo "Next:"
 echo "  • Verify OCI Streaming stream shows received messages"
 echo "  • Point EntraID Diagnostic Settings to Event Hub '$EVENTHUB_NAME' for continuous flow"

@@ -121,8 +121,8 @@ def test_oci_credentials():
         print("✅ OCI configuration validation passed")
 
         # Test endpoint and stream OCID
-        endpoint = os.getenv("MessageEndpoint")
-        stream_ocid = os.getenv("StreamOcid")
+        endpoint = os.getenv("OCI_MESSAGE_ENDPOINT") or os.getenv("MessageEndpoint")
+        stream_ocid = os.getenv("OCI_STREAM_OCID") or os.getenv("StreamOcid")
 
         if "streampool" in stream_ocid:
             print("❌ StreamOcid appears to be a Stream Pool OCID, not a Stream OCID")

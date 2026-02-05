@@ -10,48 +10,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 ENV_PATH="$REPO_ROOT/.env"
 
-info() { echo "ℹ️  $*"; }
-ok()   { echo "✅ $*"; }
-warn() { echo "⚠️  $*"; }
-err()  { echo "❌ $*"; }
-
-require_cmd() {
-  if ! command -v "$1" >/dev/null 2>&1; then
-    err "Missing required command: $1"
-    exit 1
-  fi
-}
-
-prompt_default() {
-  local prompt="$1" default="$2" var
-  read -r -p "$prompt [$default]: " var
-  if [[ -z "$var" ]]; then
-    echo "$default"
-  else
-    echo "$var"
-  fi
-}
-
-prompt_secret() {
-  local prompt="$1" var
-  read -r -s -p "$prompt: " var
-  echo
-  echo "$var"
-}
+# shellcheck source=lib/common.sh
+source "$SCRIPT_DIR/lib/common.sh"
 
 require_cmd az
 require_cmd python3
 
 # Preload existing .env to reuse values if present
-if [[ -f "$ENV_PATH" ]]; then
-  info "Loading existing values from $ENV_PATH"
-  # shellcheck disable=SC1090
-  set +u
-  set -a
-  source "$ENV_PATH"
-  set +a
-  set -u
-fi
+load_env "$ENV_PATH"
 
 RG_DEFAULT="${EVENTHUB_RG:-}"
 NS_DEFAULT="${EVENTHUB_NAMESPACE:-}"
@@ -124,8 +90,8 @@ else
   ok "Resolved connection string from Azure CLI"
 fi
 
-MessageEndpoint="$(prompt_default "OCI message endpoint" "${OCI_ENDPOINT_DEFAULT:-https://cell-1.streaming.<region>.oci.oraclecloud.com}")"
-StreamOcid="$(prompt_default "OCI stream OCID (not stream pool)" "${OCI_STREAM_DEFAULT:-ocid1.stream.oc1..xxxx}")"
+OCI_MESSAGE_ENDPOINT="$(prompt_default "OCI message endpoint" "${OCI_ENDPOINT_DEFAULT:-https://cell-1.streaming.<region>.oci.oraclecloud.com}")"
+OCI_STREAM_OCID="$(prompt_default "OCI stream OCID (not stream pool)" "${OCI_STREAM_DEFAULT:-ocid1.stream.oc1..xxxx}")"
 
 user="$(prompt_default "OCI user OCID" "${user:-ocid1.user.oc1..example}")"
 fingerprint="$(prompt_default "OCI API key fingerprint" "${fingerprint:-<fingerprint>}")"
@@ -157,10 +123,8 @@ EVENTHUB_RG="$EVENTHUB_RG"
 EVENTHUB_NAMESPACE="$EVENTHUB_NAMESPACE"
 EVENTHUB_NAME="$PRIMARY_EVENTHUB"
 
-MessageEndpoint="$MessageEndpoint"
-StreamOcid="$StreamOcid"
-OCI_MESSAGE_ENDPOINT="$MessageEndpoint"
-OCI_STREAM_OCID="$StreamOcid"
+OCI_MESSAGE_ENDPOINT="$OCI_MESSAGE_ENDPOINT"
+OCI_STREAM_OCID="$OCI_STREAM_OCID"
 
 user="$user"
 key_content="$key_content"

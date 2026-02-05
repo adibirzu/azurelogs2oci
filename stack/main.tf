@@ -44,9 +44,9 @@ locals {
     var.log_analytics_namespace != ""
     ? var.log_analytics_namespace
     : try(
-        data.oci_log_analytics_namespaces.this.namespace_collection[0].items[0].namespace,
-        ""
-      )
+      data.oci_log_analytics_namespaces.this.namespace_collection[0].items[0].namespace,
+      ""
+    )
   )
 
   compartment_name = (
