@@ -3,6 +3,7 @@
 [![License: UPL](https://img.shields.io/badge/license-UPL-green)](https://img.shields.io/badge/license-UPL-green)
 
 Stream Azure Event Hub logs (e.g., Entra ID audit logs) end-to-end into Oracle Cloud Infrastructure Log Analytics — with a custom parser, multicloud tagging, and one-click OCI deployment.
+This is a personal project, to proove the product capabilities, not an Oracle Product. 
 
 ## Overview
 
