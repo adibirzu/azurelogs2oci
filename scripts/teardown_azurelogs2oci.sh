@@ -171,7 +171,7 @@ teardown_oci() {
         info "Deactivating SCH before deletion..."
         oci sch service-connector deactivate \
             --service-connector-id "$DISC_OCI_SCH_ID" \
-            --wait-for-state INACTIVE \
+            --wait-for-state SUCCEEDED \
             --max-wait-seconds 120 >/dev/null 2>&1 || true
       fi
 
@@ -179,7 +179,7 @@ teardown_oci() {
         oci sch service-connector delete \
           --service-connector-id "$DISC_OCI_SCH_ID" \
           --force \
-          --wait-for-state DELETED \
+          --wait-for-state SUCCEEDED \
           --max-wait-seconds 300
     fi
     # Clear from .env

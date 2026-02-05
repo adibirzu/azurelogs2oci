@@ -172,13 +172,13 @@ if [[ "$SETUP_MODE" == "destroy" ]]; then
     if [[ "$local_sch_state" == "ACTIVE" ]]; then
       oci sch service-connector deactivate \
           --service-connector-id "$DISC_OCI_SCH_ID" \
-          --wait-for-state INACTIVE \
+          --wait-for-state SUCCEEDED \
           --max-wait-seconds 120 >/dev/null 2>&1 || true
     fi
     oci sch service-connector delete \
         --service-connector-id "$DISC_OCI_SCH_ID" \
         --force \
-        --wait-for-state DELETED \
+        --wait-for-state SUCCEEDED \
         --max-wait-seconds 300 2>/dev/null || true
     ok "SCH deleted"
   fi
@@ -349,9 +349,7 @@ JSONEOF
       --description "Forwards Azure EntraID Audit logs from OCI Streaming to Log Analytics ($LOG_GROUP_NAME group) using Azure EntraID parser" \
       --source file:///tmp/azure_sch_source.json \
       --target file:///tmp/azure_sch_target.json \
-      --query 'data.id' --raw-output \
-      --wait-for-state ACTIVE \
-      --max-wait-seconds 300 2>&1 || true)
+      --query 'data.id' --raw-output 2>&1 || true)
 
   if [[ -n "$SCH_ID" && "$SCH_ID" != "null" ]]; then
     ok "SCH created: ${SCH_ID:0:50}..."
