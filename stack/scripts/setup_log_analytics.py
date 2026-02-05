@@ -197,13 +197,41 @@ EXAMPLE_LOG = {
 
 # -- Field Creation ------------------------------------------------
 
+def _build_existing_field_map(client, namespace):
+    """Fetch all existing fields and return a display_name -> internal_name map."""
+    result = {}
+    page = None
+    while True:
+        kwargs = {"limit": 1000}
+        if page:
+            kwargs["page"] = page
+        resp = client.list_fields(namespace, **kwargs)
+        for f in resp.data.items:
+            if f.display_name:
+                result[f.display_name] = f.name
+        page = resp.headers.get("opc-next-page")
+        if not page:
+            break
+    return result
+
+
 def create_fields(client, namespace):
     """Create or upsert all 22 custom fields.
 
     Returns a dict mapping display_name -> internal_name.
     """
+    # Pre-fetch existing fields for reliable lookups (the SDK's
+    # display_name_contains kwarg is not available in all versions).
+    existing = _build_existing_field_map(client, namespace)
+
     field_map = {}
     for display_name in FIELD_DISPLAY_NAMES:
+        # If the field already exists, reuse it
+        if display_name in existing:
+            field_map[display_name] = existing[display_name]
+            print(f"  Field EXISTS {existing[display_name]:12s} -> {display_name}")
+            continue
+
         details = UpsertLogAnalyticsFieldDetails()
         details.display_name = display_name
         details.data_type = "String"
@@ -212,19 +240,8 @@ def create_fields(client, namespace):
             resp = client.upsert_field(namespace, details)
             field_map[display_name] = resp.data.name
             print(f"  Field OK     {resp.data.name:12s} -> {display_name}")
-        except oci.exceptions.ServiceError:
-            # Field may already exist; look it up
-            try:
-                fields = client.list_fields(
-                    namespace, display_name_contains=display_name
-                ).data.items
-                for f in fields:
-                    if f.display_name == display_name:
-                        field_map[display_name] = f.name
-                        print(f"  Field EXISTS {f.name:12s} -> {display_name}")
-                        break
-            except Exception as exc:
-                print(f"  Field ERR: {display_name}: {exc}")
+        except oci.exceptions.ServiceError as exc:
+            print(f"  Field ERR    {display_name}: {exc.message}")
     return field_map
 
 
@@ -371,6 +388,15 @@ def main():
     print("--- Creating custom fields (22) ---")
     field_map = create_fields(client, namespace)
     print(f"  Total: {len(field_map)} fields\n")
+
+    # Validate that all custom fields referenced by the parser are resolved
+    missing = [
+        name for name, _, _ in FIELD_MAPPINGS
+        if name not in field_map and name not in ("msg", "sevlvl", "time", "method")
+    ]
+    if missing:
+        print(f"WARNING: {len(missing)} field(s) not resolved: {missing}")
+        print("  Parser creation may fail. Check field creation errors above.")
 
     print("--- Creating JSON parser (26 field mappings) ---")
     create_parser(client, namespace, field_map)
