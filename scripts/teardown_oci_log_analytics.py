@@ -15,7 +15,7 @@
 #
 # Flags:
 #   --dry-run       Show what would be deleted without deleting
-#   --keep-fields   Skip field deletion entirely
+#   --keep-fields   Skip field deletion (keep fields for shared use)
 #
 # Required env:
 #   LA_NAMESPACE          Log Analytics namespace
@@ -185,11 +185,12 @@ def delete_fields(client, namespace, dry_run=False):
     deleted = 0
     skipped = 0
     for display_name in AZURE_FIELD_DISPLAY_NAMES:
-        # Find the internal field name
+        # Find the internal field name using the filter parameter
         internal_name = None
         try:
+            # Use filter param to search by display name
             fields = client.list_fields(
-                namespace, display_name_contains=display_name
+                namespace, filter=display_name
             ).data.items
             for f in fields:
                 if f.display_name == display_name:

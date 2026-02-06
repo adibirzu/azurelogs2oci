@@ -12,7 +12,8 @@
 #   --oci-only         OCI resources only
 #   --dry-run          Show what would be deleted
 #   --force            Skip confirmation prompts
-#   --keep-fields      Don't delete Log Analytics fields
+#   --purge-la         Delete Log Analytics content (source, parser, fields)
+#                      By default, LA content is kept to preserve historical logs
 #   --keep-rg          Delete Azure resources but keep the Resource Group
 # ─────────────────────────────────────────────────────────────
 set -euo pipefail
@@ -30,7 +31,7 @@ source "$SCRIPT_DIR/discover_resources.sh"
 SCOPE="all"        # all | azure | oci
 DRY_RUN=false
 FORCE=false
-KEEP_FIELDS=false
+PURGE_LA=false     # By default, keep LA content (source, parser, fields)
 KEEP_RG=false
 
 while [[ $# -gt 0 ]]; do
@@ -40,7 +41,7 @@ while [[ $# -gt 0 ]]; do
     --oci-only)     SCOPE="oci"; shift ;;
     --dry-run)      DRY_RUN=true; shift ;;
     --force)        FORCE=true; shift ;;
-    --keep-fields)  KEEP_FIELDS=true; shift ;;
+    --purge-la)     PURGE_LA=true; shift ;;
     --keep-rg)      KEEP_RG=true; shift ;;
     --help|-h)
       cat <<EOF
@@ -52,7 +53,8 @@ Flags:
   --oci-only         OCI resources only
   --dry-run          Show what would be deleted
   --force            Skip confirmation prompts
-  --keep-fields      Don't delete Log Analytics fields
+  --purge-la         Delete Log Analytics content (source, parser, fields)
+                     By default, LA content is kept to preserve historical logs
   --keep-rg          Delete Azure resources but keep the Resource Group
 EOF
       exit 0
@@ -95,7 +97,7 @@ echo "  ${MODE}azurelogs2oci Teardown"
 echo "============================================================"
 echo "  Scope:       $SCOPE"
 echo "  Dry run:     $DRY_RUN"
-echo "  Keep fields: $KEEP_FIELDS"
+echo "  Purge LA:    $PURGE_LA"
 echo "  Keep RG:     $KEEP_RG"
 echo "============================================================"
 echo ""
@@ -192,15 +194,17 @@ teardown_oci() {
   echo ""
   echo "  2/5  Log Analytics custom content (source, parser, fields)"
   local namespace="${DISC_OCI_NAMESPACE:-$OCI_LOG_ANALYTICS_NAMESPACE}"
-  if [[ -n "$namespace" ]]; then
+  if [[ "$PURGE_LA" != true ]]; then
+    info "Keeping LA content (source, parser, fields) for historical logs."
+    info "Use --purge-la to delete LA content."
+  elif [[ -n "$namespace" ]]; then
     export LA_NAMESPACE="$namespace"
     export OCI_COMPARTMENT_ID="$compartment"
 
     local py_args=()
     [[ "$DRY_RUN" == true ]] && py_args+=(--dry-run)
-    [[ "$KEEP_FIELDS" == true ]] && py_args+=(--keep-fields)
 
-    python3 "$SCRIPT_DIR/teardown_oci_log_analytics.py" "${py_args[@]}"
+    python3 "$SCRIPT_DIR/teardown_oci_log_analytics.py" ${py_args[@]+"${py_args[@]}"}
   else
     warn "Log Analytics namespace unknown; skipping LA content teardown."
   fi
@@ -212,7 +216,7 @@ teardown_oci() {
     safe_delete "Log Group: $DISC_OCI_LOG_GROUP_NAME" \
       oci log-analytics log-group delete \
         --namespace-name "$namespace" \
-        --log-analytics-log-group-id "$DISC_OCI_LOG_GROUP_ID" \
+        --log-group-id "$DISC_OCI_LOG_GROUP_ID" \
         --force
     [[ "$DRY_RUN" != true ]] && update_env_var "OCI_LOG_GROUP_ID" "" "$ENV_PATH"
   else

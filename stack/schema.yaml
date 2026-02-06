@@ -45,6 +45,14 @@ variableGroups:
       - create_iam_policies
       - policy_compartment_name
 
+  - title: "Compute (Future Use)"
+    visible: false
+    variables:
+      - compute_shape
+      - compute_ocpus
+      - compute_memory_in_gbs
+      - compute_image_id
+
 variables:
   compartment_ocid:
     type: oci:identity:compartment:id
@@ -131,6 +139,34 @@ variables:
     type: string
     title: "Compartment Name (for policy text)"
     description: "Leave empty to auto-detect from compartment OCID"
+    default: ""
+
+  compute_shape:
+    type: string
+    title: "Compute Shape"
+    description: "Instance shape for optional future compute resources"
+    default: "VM.Standard.E5.Flex"
+
+  compute_ocpus:
+    type: integer
+    title: "Compute OCPUs"
+    description: "Number of OCPUs for flex shapes"
+    default: 1
+    minimum: 1
+    maximum: 64
+
+  compute_memory_in_gbs:
+    type: integer
+    title: "Compute Memory (GB)"
+    description: "Memory in GB for flex shapes"
+    default: 16
+    minimum: 1
+    maximum: 1024
+
+  compute_image_id:
+    type: string
+    title: "Custom Image OCID"
+    description: "Leave empty to use platform images"
     default: ""
 
 outputGroups:
