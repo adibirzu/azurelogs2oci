@@ -176,3 +176,7 @@ outputGroups:
       - stream_pool_id
       - log_group_id
       - service_connector_id
+
+  - title: "Discovery Status"
+    outputs:
+      - resources_discovered
