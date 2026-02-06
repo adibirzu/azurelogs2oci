@@ -90,7 +90,7 @@ locals {
   existing_stream_pool_list = try(data.oci_streaming_stream_pools.existing.stream_pools[0], null)
   existing_stream_pool      = try(data.oci_streaming_stream_pool.existing[0], null)
   existing_stream           = try(data.oci_streaming_streams.existing.streams[0], null)
-  existing_log_group        = try(
+  existing_log_group = try(
     data.oci_log_analytics_log_analytics_log_groups.existing.log_analytics_log_group_summary_collection[0].items[0],
     null
   )
