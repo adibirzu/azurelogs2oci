@@ -135,7 +135,7 @@ The setup scripts (`setup_oci_log_analytics.sh`, `provision_azure_to_oci.sh`) al
 
 Deploy the OCI infrastructure directly from the OCI Console with the Resource Manager Stack:
 
-[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/oracle-devrel/azurelogs2oci/releases/latest/download/azurelogs2oci-stack.zip)
+[![Deploy to Oracle Cloud](https://oci-resourcemanager-plugin.plugins.oci.oraclecloud.com/latest/deploy-to-oracle-cloud.svg)](https://cloud.oracle.com/resourcemanager/stacks/create?zipUrl=https://github.com/adibirzu/azurelogs2oci/releases/latest/download/azurelogs2oci-stack.zip)
 
 ### Manual Stack Deployment
 
