@@ -13,8 +13,8 @@ resource "oci_identity_policy" "sch_streaming" {
   description    = "Allow Service Connector Hub to read from OCI Streaming for the azurelogs2oci pipeline"
 
   statements = [
-    "Allow any-user to use stream-pull in compartment ${local.compartment_name} where all {request.principal.type='serviceconnector'}",
-    "Allow any-user to use stream-consume in compartment ${local.compartment_name} where all {request.principal.type='serviceconnector'}",
+    "Allow any-user to use stream-pull in compartment id ${var.compartment_ocid} where all {request.principal.type='serviceconnector'}",
+    "Allow any-user to use stream-consume in compartment id ${var.compartment_ocid} where all {request.principal.type='serviceconnector'}",
   ]
 }
 
@@ -26,6 +26,6 @@ resource "oci_identity_policy" "sch_log_analytics" {
   description    = "Allow Service Connector Hub to write to Log Analytics for the azurelogs2oci pipeline"
 
   statements = [
-    "Allow any-user to use log-analytics-log-group in compartment ${local.compartment_name} where all {request.principal.type='serviceconnector'}",
+    "Allow any-user to use log-analytics-log-group in compartment id ${var.compartment_ocid} where all {request.principal.type='serviceconnector'}",
   ]
 }
