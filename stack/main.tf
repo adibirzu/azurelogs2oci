@@ -39,11 +39,17 @@ data "oci_log_analytics_namespaces" "this" {
   compartment_id = var.tenancy_ocid
 }
 
-# Existing stream pools in compartment
+# Existing stream pools in compartment (list query)
 data "oci_streaming_stream_pools" "existing" {
   compartment_id = var.compartment_ocid
   name           = var.stream_pool_name
   state          = "ACTIVE"
+}
+
+# Get full stream pool details (including kafka_settings) if one exists
+data "oci_streaming_stream_pool" "existing" {
+  count          = length(try(data.oci_streaming_stream_pools.existing.stream_pools, [])) > 0 ? 1 : 0
+  stream_pool_id = data.oci_streaming_stream_pools.existing.stream_pools[0].id
 }
 
 # Existing streams in compartment
@@ -81,22 +87,23 @@ locals {
   )
 
   # Check for existing resources
-  existing_stream_pool = try(data.oci_streaming_stream_pools.existing.stream_pools[0], null)
-  existing_stream      = try(data.oci_streaming_streams.existing.streams[0], null)
-  existing_log_group   = try(
+  existing_stream_pool_list = try(data.oci_streaming_stream_pools.existing.stream_pools[0], null)
+  existing_stream_pool      = try(data.oci_streaming_stream_pool.existing[0], null)
+  existing_stream           = try(data.oci_streaming_streams.existing.streams[0], null)
+  existing_log_group        = try(
     data.oci_log_analytics_log_analytics_log_groups.existing.log_analytics_log_group_summary_collection[0].items[0],
     null
   )
   existing_sch = try(data.oci_sch_service_connectors.existing.service_connector_collection[0].items[0], null)
 
   # Flags for conditional creation
-  create_stream_pool = local.existing_stream_pool == null
+  create_stream_pool = local.existing_stream_pool_list == null
   create_stream      = local.existing_stream == null
   create_log_group   = local.existing_log_group == null
   create_sch         = local.existing_sch == null
 
   # Resolved IDs (existing or newly created)
-  stream_pool_id = local.create_stream_pool ? oci_streaming_stream_pool.azure_pool[0].id : local.existing_stream_pool.id
+  stream_pool_id = local.create_stream_pool ? oci_streaming_stream_pool.azure_pool[0].id : local.existing_stream_pool_list.id
   stream_id      = local.create_stream ? oci_streaming_stream.azure_stream[0].id : local.existing_stream.id
   log_group_id   = local.create_log_group ? oci_log_analytics_log_analytics_log_group.azure_logs[0].id : local.existing_log_group.id
   sch_id         = local.create_sch ? oci_sch_service_connector.azure_bridge[0].id : local.existing_sch.id
@@ -104,7 +111,7 @@ locals {
   # Messaging endpoint
   stream_messages_endpoint = local.create_stream ? oci_streaming_stream.azure_stream[0].messages_endpoint : local.existing_stream.messages_endpoint
 
-  # Kafka bootstrap servers
+  # Kafka bootstrap servers (use singular data source for full details)
   kafka_bootstrap_servers = local.create_stream_pool ? oci_streaming_stream_pool.azure_pool[0].kafka_settings[0].bootstrap_servers : local.existing_stream_pool.kafka_settings[0].bootstrap_servers
 }
 
