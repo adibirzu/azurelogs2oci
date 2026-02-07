@@ -46,14 +46,28 @@ except Exception as e:
     print("⚠️  Missing OCI SDK. Install with: pip install oci")
     OCI_OK = False
 
-def _enrich(body: str) -> str:
-    """Inject cloud-provider tag so multicloud dashboards can filter by CSP."""
+def _enrich(body: str) -> List[str]:
+    """Unwrap Azure Event Hub records envelope and inject cloud-provider tag.
+
+    Azure diagnostic settings wrap log entries in {"records": [...]}.
+    This function unwraps the array so each record is a standalone JSON
+    object with cloudProvider injected, matching the OCI LA parser paths.
+    """
     try:
         obj = json.loads(body)
+        # Azure Event Hub diagnostic settings envelope
+        if isinstance(obj, dict) and "records" in obj and isinstance(obj["records"], list):
+            results = []
+            for record in obj["records"]:
+                if isinstance(record, dict):
+                    record["cloudProvider"] = "Azure"
+                    results.append(json.dumps(record, separators=(",", ":")))
+            return results if results else [body]
+        # Single record (no envelope)
         obj["cloudProvider"] = "Azure"
-        return json.dumps(obj, separators=(",", ":"))
+        return [json.dumps(obj, separators=(",", ":"))]
     except (json.JSONDecodeError, TypeError):
-        return body
+        return [body]
 
 
 # ---------- OCI Sender ----------
@@ -199,14 +213,14 @@ class EventHubDrainer:
             return
         try:
             body = event.body_as_str(encoding="utf-8")
-            # Enrich with cloud provider tag for multicloud dashboards
-            body = _enrich(body)
+            # Unwrap records envelope and enrich with cloud provider tag
+            records = _enrich(body)
             self._last_event_ts = time.time()
-            self.messages_processed += 1
+            self.messages_processed += len(records)
 
-            # Add to buffer
+            # Add each unwrapped record to buffer
             with self._lock:
-                self._buffer.append(body)
+                self._buffer.extend(records)
                 # Flush opportunistically if thresholds exceeded
                 self._flush_if_needed(force=False)
 

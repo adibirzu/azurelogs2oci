@@ -334,12 +334,12 @@ else
   "cursor": {"kind": "TRIM_HORIZON"}
 }
 JSONEOF
-  # Target: Log Analytics
+  # Target: Log Analytics (logSourceIdentifier uses the source internal name)
   cat > /tmp/azure_sch_target.json << JSONEOF
 {
   "kind": "loggingAnalytics",
   "logGroupId": "$LOG_GROUP_ID",
-  "logSourceIdentifier": "$SOURCE_NAME"
+  "logSourceIdentifier": "azureLogsSource"
 }
 JSONEOF
 

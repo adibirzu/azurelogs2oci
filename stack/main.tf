@@ -179,6 +179,6 @@ resource "oci_sch_service_connector" "azure_bridge" {
   target {
     kind                  = "loggingAnalytics"
     log_group_id          = local.log_group_id
-    log_source_identifier = "Azure Logs"
+    log_source_identifier = "azureLogsSource"
   }
 }

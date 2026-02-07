@@ -172,14 +172,28 @@ class HubBuffer:
 # Removed unused polling functions - Event Hub trigger handles this automatically
 
 
-def _enrich(body: str) -> str:
-    """Inject cloud-provider tag so multicloud dashboards can filter by CSP."""
+def _enrich(body: str) -> List[str]:
+    """Unwrap Azure Event Hub records envelope and inject cloud-provider tag.
+
+    Azure diagnostic settings wrap log entries in {"records": [...]}.
+    This function unwraps the array so each record is a standalone JSON
+    object with cloudProvider injected, matching the OCI LA parser paths.
+    """
     try:
         obj = json.loads(body)
+        # Azure Event Hub diagnostic settings envelope
+        if isinstance(obj, dict) and "records" in obj and isinstance(obj["records"], list):
+            results = []
+            for record in obj["records"]:
+                if isinstance(record, dict):
+                    record["cloudProvider"] = "Azure"
+                    results.append(json.dumps(record, separators=(",", ":")))
+            return results if results else [body]
+        # Single record (no envelope)
         obj["cloudProvider"] = "Azure"
-        return json.dumps(obj, separators=(",", ":"))
+        return [json.dumps(obj, separators=(",", ":"))]
     except (json.JSONDecodeError, TypeError):
-        return body
+        return [body]
 
 
 def mask(value: str, keep: int = 6) -> str:
@@ -273,14 +287,15 @@ def main(events: List[func.EventHubEvent]) -> None:
                 preview = body[:100].replace('\n', ' ').replace('\r', ' ')
                 logging.debug(f"Event {i+1} content preview: {preview}{'...' if len(body) > 100 else ''}")
 
-                # Enrich with cloud provider tag for multicloud dashboards
-                body = _enrich(body)
+                # Unwrap records envelope and enrich with cloud provider tag
+                records = _enrich(body)
 
-                # Add to buffer (will auto-flush based on size/count limits)
-                buffer.add(body)
-                processed_count += 1
+                # Add each unwrapped record to buffer
+                for record in records:
+                    buffer.add(record)
+                processed_count += len(records)
 
-                logging.debug(f"Event {i+1} added to buffer. Total processed: {processed_count}")
+                logging.debug(f"Event {i+1}: {len(records)} record(s) added to buffer. Total processed: {processed_count}")
 
             except UnicodeDecodeError as e:
                 error_count += 1
