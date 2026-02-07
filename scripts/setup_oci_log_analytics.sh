@@ -196,7 +196,7 @@ if [[ "$SETUP_MODE" == "destroy" ]]; then
     info "Deleting Log Group..."
     oci log-analytics log-group delete \
         --namespace-name "$NAMESPACE" \
-        --log-analytics-log-group-id "$DISC_OCI_LOG_GROUP_ID" \
+        --log-group-id "$DISC_OCI_LOG_GROUP_ID" \
         --force 2>/dev/null || true
     ok "Log Group deleted"
   fi
@@ -295,13 +295,29 @@ else
   if [[ "$SETUP_MODE" == "create" && -n "$DISC_OCI_LOG_GROUP_ID" ]]; then
     LOG_GROUP_NAME="$(prompt_required "New log group name" "${LOG_GROUP_NAME}-2")"
   fi
+  # Try to create; if it already exists (409), look it up and reuse
   LOG_GROUP_ID=$(oci log-analytics log-group create \
       --compartment-id "$OCI_COMPARTMENT_ID" \
       --namespace-name "$NAMESPACE" \
       --display-name "$LOG_GROUP_NAME" \
       --description "Azure log imports via azurelogs2oci pipeline" \
-      --query 'data.id' --raw-output)
-  ok "Log Group created: ${LOG_GROUP_ID:0:50}..."
+      --query 'data.id' --raw-output 2>/dev/null) || true
+  if [[ -z "$LOG_GROUP_ID" || "$LOG_GROUP_ID" == "null" ]]; then
+    info "Log group '$LOG_GROUP_NAME' already exists, looking it up..."
+    LOG_GROUP_ID=$(oci log-analytics log-group list \
+        --compartment-id "$OCI_COMPARTMENT_ID" \
+        --namespace-name "$NAMESPACE" \
+        --display-name "$LOG_GROUP_NAME" \
+        --query 'data.items[0].id' --raw-output 2>/dev/null || true)
+    if [[ -n "$LOG_GROUP_ID" && "$LOG_GROUP_ID" != "null" ]]; then
+      ok "Reusing existing log group: ${LOG_GROUP_ID:0:50}..."
+    else
+      err "Could not create or find log group '$LOG_GROUP_NAME'"
+      exit 1
+    fi
+  else
+    ok "Log Group created: ${LOG_GROUP_ID:0:50}..."
+  fi
 fi
 
 # ── 5. Create Log Analytics fields, parser, and source ────────
