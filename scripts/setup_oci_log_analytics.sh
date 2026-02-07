@@ -355,7 +355,7 @@ JSONEOF
 
   # Wait briefly, then resolve the OCID from the list API
   info "Waiting for SCH to appear..."
-  local attempts=0
+  attempts=0
   SCH_ID=""
   while [[ -z "$SCH_ID" || "$SCH_ID" == "null" ]] && [[ $attempts -lt 12 ]]; do
     sleep 5
