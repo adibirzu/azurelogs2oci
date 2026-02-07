@@ -2,8 +2,15 @@
 # -----------------------------------------------------------------
 # setup_log_analytics.py
 #
-# Create OCI Log Analytics custom fields (22), JSON parser
-# (26 field mappings), and source for Azure Logs.
+# Create OCI Log Analytics custom fields (38), two JSON parsers,
+# and source for Azure Logs.
+#
+# Parsers:
+#   1. Azure EntraID Audit JSON Parser  (26 field mappings)
+#      – Unified Audit Log format (EntraID, O365)
+#   2. Azure Diagnostic Log JSON Parser (21 field mappings)
+#      – Azure Monitor common schema (Activity Logs, Storage,
+#        Network Watcher, Functions, VMs, Event Hubs, etc.)
 #
 # This script handles the Log Analytics resources that have no
 # Terraform provider support.  Run it after `terraform apply`
@@ -88,12 +95,13 @@ def get_client():
     return oci.log_analytics.LogAnalyticsClient(config)
 
 
-# -- Field Definitions (22 custom fields) -------------------------
+# -- Field Definitions (38 custom fields) -------------------------
 
 FIELD_DISPLAY_NAMES = [
-    # Multicloud (shared across all cloud providers)
+    # ── Multicloud (shared across all cloud providers) ──
     "Cloud Provider",
-    # Core Azure EntraID Audit fields
+
+    # ── EntraID / Unified Audit Log fields (21) ──
     "Azure Time Generated",
     "Azure Event ID",
     "Azure Operation",
@@ -109,20 +117,44 @@ FIELD_DISPLAY_NAMES = [
     "Azure Schema Version",
     "Azure Creation Time",
     "Azure AD Event Type",
-    # Actor / Target context
     "Azure Actor Context ID",
     "Azure Actor IP Address",
     "Azure Inter Systems ID",
     "Azure Intra System ID",
     "Azure Target Context ID",
     "Azure Application ID",
+
+    # ── Azure Monitor Diagnostic / Activity Log fields (16) ──
+    # Common schema for Activity Logs, Resource Logs, and all
+    # Azure services streaming via Event Hub diagnostic settings
+    # (Storage, Network Watcher, Functions, VMs, Event Hubs, etc.)
+    "Azure Resource ID",
+    "Azure Resource Group",
+    "Azure Resource Type",
+    "Azure Resource Provider",
+    "Azure Subscription ID",
+    "Azure Correlation ID",
+    "Azure Caller",
+    "Azure Level",
+    "Azure Tenant ID",
+    "Azure Location",
+    "Azure Category",
+    "Azure Duration Ms",
+    "Azure Result Type",
+    "Azure Result Signature",
+    "Azure Result Description",
+    "Azure Caller IP",
 ]
 
 
-# -- Parser Field Mappings (26 total) -----------------------------
+# ═══════════════════════════════════════════════════════════════
+# Parser 1: Azure EntraID Audit (Unified Audit Log)
+# ═══════════════════════════════════════════════════════════════
+
+# -- EntraID Parser Field Mappings (26 total) --------------------
 # (display_name_or_builtin, json_path, sequence)
 
-FIELD_MAPPINGS = [
+ENTRAID_FIELD_MAPPINGS = [
     # Built-in LA fields
     ("msg",                       "$.Operation",                           1),
     ("sevlvl",                    "$.ResultStatus",                        2),
@@ -155,10 +187,9 @@ FIELD_MAPPINGS = [
     ("Azure Application ID",      "$.ApplicationId",                      26),
 ]
 
+# -- EntraID Example Log (exercises all 26 field mappings) -------
 
-# -- Example Log (exercises all 26 field mappings) -----------------
-
-EXAMPLE_LOG = {
+ENTRAID_EXAMPLE_LOG = {
     "cloudProvider": "Azure",
     "TimeGenerated": "2026-01-15T10:30:00.000000+00:00",
     "Id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
@@ -192,6 +223,77 @@ EXAMPLE_LOG = {
     ],
     "TargetContextId": "b4c245f3-521b-456d-9eb1-ca5a86d28394",
     "ApplicationId": "00000002-0000-0ff1-ce00-000000000000",
+}
+
+# ═══════════════════════════════════════════════════════════════
+# Parser 2: Azure Diagnostic / Activity Logs
+#   Common schema for Azure Monitor resource logs streamed via
+#   Event Hub diagnostic settings.  Covers: Activity Logs,
+#   Network Watcher (NSG Flow), Storage, Functions, VMs,
+#   Event Hubs, SQL, Key Vault, App Service, and more.
+# ═══════════════════════════════════════════════════════════════
+
+# -- Diagnostic Parser Field Mappings (21 total) -----------------
+
+DIAG_FIELD_MAPPINGS = [
+    # Built-in LA fields
+    ("msg",                       "$.operationName",                       1),
+    ("sevlvl",                    "$.level",                               2),
+    ("time",                      "$.time",                                3),
+    ("method",                    "$.operationName",                       4),
+    # Multicloud
+    ("Cloud Provider",            "$.cloudProvider",                       5),
+    # Azure Monitor common schema
+    ("Azure Resource ID",         "$.resourceId",                          6),
+    ("Azure Resource Group",      "$.resourceGroupName",                   7),
+    ("Azure Resource Type",       "$.resourceType",                        8),
+    ("Azure Resource Provider",   "$.resourceProviderName",                9),
+    ("Azure Subscription ID",     "$.subscriptionId",                     10),
+    ("Azure Correlation ID",      "$.correlationId",                      11),
+    ("Azure Caller",              "$.caller",                             12),
+    ("Azure Level",               "$.level",                              13),
+    ("Azure Tenant ID",           "$.tenantId",                           14),
+    ("Azure Location",            "$.location",                           15),
+    ("Azure Category",            "$.category",                           16),
+    ("Azure Duration Ms",         "$.durationMs",                         17),
+    ("Azure Result Type",         "$.resultType",                         18),
+    ("Azure Result Signature",    "$.resultSignature",                    19),
+    ("Azure Result Description",  "$.resultDescription",                  20),
+    ("Azure Caller IP",           "$.callerIpAddress",                    21),
+]
+
+# -- Diagnostic Example Log (Azure Activity Log via Event Hub) ---
+
+DIAG_EXAMPLE_LOG = {
+    "cloudProvider": "Azure",
+    "time": "2026-01-15T10:30:00.0000000Z",
+    "resourceId": "/subscriptions/a1b2c3d4-e5f6-7890-abcd-ef1234567890/resourceGroups/myResourceGroup/providers/Microsoft.Network/networkSecurityGroups/myNSG",
+    "operationName": "Microsoft.Network/networkSecurityGroups/write",
+    "category": "Administrative",
+    "resultType": "Success",
+    "resultSignature": "Succeeded.Created",
+    "resultDescription": "Network security group created or updated",
+    "durationMs": 1250,
+    "callerIpAddress": "203.0.113.50",
+    "correlationId": "aaaa0000-bb11-2222-33cc-444444dddddd",
+    "identity": {
+        "claims": {
+            "name": "admin@example.com",
+            "ipaddr": "203.0.113.50",
+        },
+    },
+    "level": "Informational",
+    "location": "eastus",
+    "properties": {
+        "statusCode": "Created",
+        "serviceRequestId": "a4c11dbd-697e-47c5-9663-12362307157d",
+    },
+    "caller": "admin@example.com",
+    "resourceGroupName": "myResourceGroup",
+    "resourceType": "Microsoft.Network/networkSecurityGroups",
+    "resourceProviderName": "Microsoft.Network",
+    "subscriptionId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "tenantId": "7c38a3a9-2710-4798-83e6-82f14ba656bd",
 }
 
 
@@ -247,13 +349,16 @@ def create_fields(client, namespace):
 
 # -- Parser Creation -----------------------------------------------
 
-PARSER_NAME = "azureEntraIDAuditJsonParser"
+ENTRAID_PARSER_NAME = "azureEntraIDAuditJsonParser"
+DIAG_PARSER_NAME = "azureDiagnosticLogJsonParser"
 
 
-def create_parser(client, namespace, field_map):
-    """Create or upsert the JSON parser with 26 field mappings."""
+def _upsert_parser(client, namespace, field_map, parser_name,
+                   display_name, description, field_mappings,
+                   example_log, is_default=False):
+    """Create or upsert a JSON parser with the given field mappings."""
     parser_field_maps = []
-    for name_or_display, json_path, seq in FIELD_MAPPINGS:
+    for name_or_display, json_path, seq in field_mappings:
         internal = field_map.get(name_or_display, name_or_display)
         parser_field_maps.append(
             LogAnalyticsParserField(
@@ -265,21 +370,16 @@ def create_parser(client, namespace, field_map):
             )
         )
 
-    example_content = json.dumps(EXAMPLE_LOG, indent=2)
+    example_content = json.dumps(example_log, indent=2)
 
     parser_details = UpsertLogAnalyticsParserDetails(
-        name=PARSER_NAME,
-        display_name="Azure EntraID Audit JSON Parser",
-        description=(
-            "Parses Azure EntraID Audit logs with "
-            "26 field mappings covering identity, operations, actors, "
-            "and metadata fields. Supports multicloud monitoring with "
-            "Cloud Provider = Azure."
-        ),
+        name=parser_name,
+        display_name=display_name,
+        description=description,
         type="JSON",
         language="en_US",
         encoding="UTF-8",
-        is_default=True,
+        is_default=is_default,
         is_single_line_content=False,
         is_system=False,
         header_content="$:0",
@@ -291,7 +391,7 @@ def create_parser(client, namespace, field_map):
     # Get existing etag for update (optimistic concurrency)
     etag = None
     try:
-        existing = client.get_parser(namespace, PARSER_NAME)
+        existing = client.get_parser(namespace, parser_name)
         etag = existing.headers.get("etag")
     except oci.exceptions.ServiceError:
         pass
@@ -299,6 +399,43 @@ def create_parser(client, namespace, field_map):
     kwargs = {"if_match": etag} if etag else {}
     result = client.upsert_parser(namespace, parser_details, **kwargs)
     print(f"  Parser OK: {result.data.name} ({len(result.data.field_maps)} field maps)")
+
+
+def create_entraid_parser(client, namespace, field_map):
+    """Create the Azure EntraID Audit JSON parser (26 field mappings)."""
+    _upsert_parser(
+        client, namespace, field_map,
+        parser_name=ENTRAID_PARSER_NAME,
+        display_name="Azure EntraID Audit JSON Parser",
+        description=(
+            "Parses Azure EntraID / Unified Audit Log entries with "
+            "26 field mappings covering identity, operations, actors, "
+            "and metadata fields. Handles logs from EntraID and Office 365 "
+            "diagnostic settings."
+        ),
+        field_mappings=ENTRAID_FIELD_MAPPINGS,
+        example_log=ENTRAID_EXAMPLE_LOG,
+        is_default=True,
+    )
+
+
+def create_diag_parser(client, namespace, field_map):
+    """Create the Azure Diagnostic Log JSON parser (21 field mappings)."""
+    _upsert_parser(
+        client, namespace, field_map,
+        parser_name=DIAG_PARSER_NAME,
+        display_name="Azure Diagnostic Log JSON Parser",
+        description=(
+            "Parses Azure Monitor diagnostic and activity logs with "
+            "21 field mappings covering the common resource log schema. "
+            "Handles logs from Activity Logs, Network Watcher, Storage, "
+            "Functions, VMs, Event Hubs, SQL, Key Vault, App Service, "
+            "and all other Azure services streaming via Event Hub."
+        ),
+        field_mappings=DIAG_FIELD_MAPPINGS,
+        example_log=DIAG_EXAMPLE_LOG,
+        is_default=False,
+    )
 
 
 # -- Source Creation -----------------------------------------------
@@ -324,9 +461,10 @@ def create_source(client, namespace, compartment_id):
     import subprocess
     import tempfile
 
-    parsers_json = json.dumps(
-        [{"name": PARSER_NAME, "isDefault": True}]
-    )
+    parsers_json = json.dumps([
+        {"name": ENTRAID_PARSER_NAME, "isDefault": True},
+        {"name": DIAG_PARSER_NAME, "isDefault": False},
+    ])
     entity_types_json = json.dumps(
         [{"entityType": "oci_generic_resource",
           "entityTypeCategory": "Undefined",
@@ -385,21 +523,29 @@ def main():
 
     client = get_client()
 
-    print("--- Creating custom fields (22) ---")
+    print(f"--- Creating custom fields ({len(FIELD_DISPLAY_NAMES)}) ---")
     field_map = create_fields(client, namespace)
     print(f"  Total: {len(field_map)} fields\n")
 
-    # Validate that all custom fields referenced by the parser are resolved
+    # Validate that all custom fields referenced by parsers are resolved
+    builtin_fields = {"msg", "sevlvl", "time", "method"}
+    all_mappings = ENTRAID_FIELD_MAPPINGS + DIAG_FIELD_MAPPINGS
     missing = [
-        name for name, _, _ in FIELD_MAPPINGS
-        if name not in field_map and name not in ("msg", "sevlvl", "time", "method")
+        name for name, _, _ in all_mappings
+        if name not in field_map and name not in builtin_fields
     ]
+    # Deduplicate (Cloud Provider appears in both parsers)
+    missing = sorted(set(missing))
     if missing:
         print(f"WARNING: {len(missing)} field(s) not resolved: {missing}")
         print("  Parser creation may fail. Check field creation errors above.")
 
-    print("--- Creating JSON parser (26 field mappings) ---")
-    create_parser(client, namespace, field_map)
+    print(f"--- Creating EntraID Audit parser ({len(ENTRAID_FIELD_MAPPINGS)} field mappings) ---")
+    create_entraid_parser(client, namespace, field_map)
+    print()
+
+    print(f"--- Creating Diagnostic Log parser ({len(DIAG_FIELD_MAPPINGS)} field mappings) ---")
+    create_diag_parser(client, namespace, field_map)
     print()
 
     print("--- Creating Log Analytics source ---")
@@ -407,6 +553,7 @@ def main():
     print()
 
     print("Log Analytics custom content setup complete.")
+    print(f"  {len(field_map)} fields, 2 parsers, 1 source")
 
 
 if __name__ == "__main__":

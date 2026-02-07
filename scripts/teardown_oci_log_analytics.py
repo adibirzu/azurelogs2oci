@@ -5,8 +5,8 @@
 # Delete OCI Log Analytics custom content created by
 # setup_log_analytics.py / setup_oci_log_analytics.sh:
 #   1. Source  (azureLogsSource)
-#   2. Parser  (azureEntraIDAuditJsonParser)
-#   3. Fields  (21 Azure-prefixed fields; "Cloud Provider" excluded)
+#   2. Parsers (azureEntraIDAuditJsonParser, azureDiagnosticLogJsonParser)
+#   3. Fields  (37 Azure-prefixed fields; "Cloud Provider" excluded)
 #
 # Auth (tried in order, same as setup_log_analytics.py):
 #   1. OCI Resource Principal
@@ -82,10 +82,14 @@ def get_client():
 
 SOURCE_NAME = "Azure Logs"
 SOURCE_INTERNAL_NAME = "azureLogsSource"
-PARSER_NAME = "azureEntraIDAuditJsonParser"
+PARSER_NAMES = [
+    "azureEntraIDAuditJsonParser",
+    "azureDiagnosticLogJsonParser",
+]
 
 # Fields to delete (Azure-prefixed only; "Cloud Provider" is shared with gcplogs2oci)
 AZURE_FIELD_DISPLAY_NAMES = [
+    # EntraID / Unified Audit Log fields
     "Azure Time Generated",
     "Azure Event ID",
     "Azure Operation",
@@ -107,6 +111,23 @@ AZURE_FIELD_DISPLAY_NAMES = [
     "Azure Intra System ID",
     "Azure Target Context ID",
     "Azure Application ID",
+    # Azure Monitor Diagnostic / Activity Log fields
+    "Azure Resource ID",
+    "Azure Resource Group",
+    "Azure Resource Type",
+    "Azure Resource Provider",
+    "Azure Subscription ID",
+    "Azure Correlation ID",
+    "Azure Caller",
+    "Azure Level",
+    "Azure Tenant ID",
+    "Azure Location",
+    "Azure Category",
+    "Azure Duration Ms",
+    "Azure Result Type",
+    "Azure Result Signature",
+    "Azure Result Description",
+    "Azure Caller IP",
 ]
 
 
@@ -151,30 +172,31 @@ def delete_source(client, namespace, compartment_id, dry_run=False):
         print(f"    -> warning: {result.stderr[:200]}")
 
 
-def delete_parser(client, namespace, dry_run=False):
-    """Delete the JSON parser."""
-    print(f"  Parser: {PARSER_NAME}")
+def delete_parsers(client, namespace, dry_run=False):
+    """Delete all JSON parsers."""
+    for parser_name in PARSER_NAMES:
+        print(f"  Parser: {parser_name}")
 
-    try:
-        client.get_parser(namespace, PARSER_NAME)
-    except oci.exceptions.ServiceError as e:
-        if e.status == 404:
-            print("    -> already deleted (404)")
-            return
-        raise
+        try:
+            client.get_parser(namespace, parser_name)
+        except oci.exceptions.ServiceError as e:
+            if e.status == 404:
+                print("    -> already deleted (404)")
+                continue
+            raise
 
-    if dry_run:
-        print("    -> would delete (dry-run)")
-        return
+        if dry_run:
+            print("    -> would delete (dry-run)")
+            continue
 
-    try:
-        client.delete_parser(namespace, PARSER_NAME)
-        print("    -> deleted")
-    except oci.exceptions.ServiceError as e:
-        if e.status == 404:
-            print("    -> already deleted (404)")
-        else:
-            print(f"    -> warning: {e.message}")
+        try:
+            client.delete_parser(namespace, parser_name)
+            print("    -> deleted")
+        except oci.exceptions.ServiceError as e:
+            if e.status == 404:
+                print("    -> already deleted (404)")
+            else:
+                print(f"    -> warning: {e.message}")
 
 
 def delete_fields(client, namespace, dry_run=False):
@@ -261,8 +283,8 @@ def main():
     delete_source(client, namespace, compartment_id, args.dry_run)
     print()
 
-    print("--- Deleting parser ---")
-    delete_parser(client, namespace, args.dry_run)
+    print("--- Deleting parsers ---")
+    delete_parsers(client, namespace, args.dry_run)
     print()
 
     if args.keep_fields:

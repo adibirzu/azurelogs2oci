@@ -169,15 +169,17 @@ Deploy the OCI infrastructure directly from the OCI Console with the Resource Ma
    terraform apply
    ```
 
-The stack creates: Stream Pool, Stream, Log Analytics Log Group, Service Connector Hub, and IAM policies. The Python helper script handles Log Analytics custom content (22 fields, 26-mapping JSON parser, source) which has no Terraform provider support.
+The stack creates: Stream Pool, Stream, Log Analytics Log Group, Service Connector Hub, and IAM policies. The Python helper script handles Log Analytics custom content (38 fields, 2 JSON parsers, source) which has no Terraform provider support.
 
-## Azure Logs Source & Parser
+## Azure Logs Source & Parsers
 
-The `setup_oci_log_analytics.sh` script (or `stack/scripts/setup_log_analytics.py` for Terraform deployments) creates a custom **Azure Logs** source and **Azure EntraID Audit JSON Parser** in OCI Log Analytics with **26 field mappings** covering the Azure EntraID [Unified Audit Log](https://learn.microsoft.com/en-us/purview/audit-log-activities) schema. The source is named generically to accommodate all Azure log types forwarded via Event Hub (e.g., EntraID Audit, Network Watcher, Azure Functions, Storage, VM diagnostics).
+The `setup_oci_log_analytics.sh` script (or `stack/scripts/setup_log_analytics.py` for Terraform deployments) creates a custom **Azure Logs** source with **two JSON parsers** in OCI Log Analytics, covering all Azure log types forwarded via Event Hub.
 
 The Azure Function injects `cloudProvider: "Azure"` into every log entry for multicloud dashboard filtering.
 
-### Field Categories (26 total)
+### Parser 1: Azure EntraID Audit (26 field mappings)
+
+Handles **Unified Audit Log** format from EntraID and Office 365 diagnostic settings.
 
 **Built-in** (4): Message, Severity, Time, Method
 
@@ -187,10 +189,24 @@ The Azure Function injects `cloudProvider: "Azure"` into every log entry for mul
 
 **Actor / Target Context** (6): Actor Context ID, Actor IP Address, Inter Systems ID, Intra System ID, Target Context ID, Application ID
 
-### Example Query
+### Parser 2: Azure Diagnostic Log (21 field mappings)
+
+Handles **Azure Monitor common schema** for Activity Logs, Resource Logs, and all Azure services streaming via Event Hub diagnostic settings (Network Watcher, Storage, Functions, VMs, Event Hubs, SQL, Key Vault, App Service, etc.).
+
+**Built-in** (4): Message, Severity, Time, Method
+
+**Multicloud** (1): Cloud Provider (`$.cloudProvider`)
+
+**Azure Monitor Common** (16): Resource ID, Resource Group, Resource Type, Resource Provider, Subscription ID, Correlation ID, Caller, Level, Tenant ID, Location, Category, Duration Ms, Result Type, Result Signature, Result Description, Caller IP
+
+### Example Queries
 
 ```
 'Cloud Provider' = 'Azure' | stats count by 'Azure Operation'
+```
+
+```
+'Azure Category' = 'Administrative' | stats count by 'Azure Caller'
 ```
 
 For multicloud environments with both `gcplogs2oci` and `azurelogs2oci`, use:

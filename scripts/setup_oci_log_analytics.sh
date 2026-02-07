@@ -6,8 +6,8 @@
 # Creates (or reuses existing):
 #   1. Stream Pool + Stream (Kafka-compatible ingest)
 #   2. Log Analytics Log Group (AzureLogs)
-#   3. Log Analytics custom fields (Azure log schema)
-#   4. Log Analytics JSON parser (Azure EntraID Audit JSON Parser)
+#   3. Log Analytics custom fields (38 fields)
+#   4. Log Analytics JSON parsers (EntraID Audit + Diagnostic Log)
 #   5. Log Analytics source (Azure Logs)
 #   6. Service Connector Hub (Stream → Log Analytics)
 #
@@ -312,7 +312,7 @@ export OCI_USER_OCID OCI_FINGERPRINT OCI_TENANCY_OCID OCI_REGION
 export OCI_KEY_CONTENT OCI_KEY_FILE OCI_KEY_PASSPHRASE
 
 python3 "$REPO_ROOT/stack/scripts/setup_log_analytics.py"
-ok "Log Analytics custom content created (22 fields, parser, source)"
+ok "Log Analytics custom content created (38 fields, 2 parsers, source)"
 
 # ── 6. Create Service Connector Hub ──────────────────────────
 echo "6/7  Creating Service Connector Hub: $SCH_NAME"
