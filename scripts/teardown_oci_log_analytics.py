@@ -4,7 +4,7 @@
 #
 # Delete OCI Log Analytics custom content created by
 # setup_log_analytics.py / setup_oci_log_analytics.sh:
-#   1. Source  (azureEntraIDAuditSource)
+#   1. Source  (azureLogsSource)
 #   2. Parser  (azureEntraIDAuditJsonParser)
 #   3. Fields  (21 Azure-prefixed fields; "Cloud Provider" excluded)
 #
@@ -80,8 +80,8 @@ def get_client():
 
 # -- Constants -----------------------------------------------------
 
-SOURCE_NAME = "Azure EntraID Audit Logs"
-SOURCE_INTERNAL_NAME = "azureEntraIDAuditSource"
+SOURCE_NAME = "Azure Logs"
+SOURCE_INTERNAL_NAME = "azureLogsSource"
 PARSER_NAME = "azureEntraIDAuditJsonParser"
 
 # Fields to delete (Azure-prefixed only; "Cloud Provider" is shared with gcplogs2oci)

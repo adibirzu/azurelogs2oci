@@ -109,7 +109,7 @@ variables:
   log_group_description:
     type: string
     title: "Log Group Description"
-    default: "Azure EntraID Audit log imports via azurelogs2oci pipeline"
+    default: "Azure log imports via azurelogs2oci pipeline"
 
   log_analytics_namespace:
     type: string
@@ -126,7 +126,7 @@ variables:
   sch_description:
     type: string
     title: "Service Connector Hub Description"
-    default: "Forwards Azure EntraID Audit logs from OCI Streaming to Log Analytics using Azure EntraID parser"
+    default: "Forwards Azure logs from OCI Streaming to Log Analytics"
 
   create_iam_policies:
     type: boolean

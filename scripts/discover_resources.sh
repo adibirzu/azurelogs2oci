@@ -32,7 +32,7 @@ discover_oci_resources() {
   local log_group_name="${OCI_LOG_GROUP_NAME:-AzureLogs}"
   local sch_name="${OCI_SCH_NAME:-Azure-Stream-to-LogAnalytics}"
   local namespace="${OCI_LOG_ANALYTICS_NAMESPACE:-}"
-  local source_name="Azure EntraID Audit Logs"
+  local source_name="Azure Logs"
 
   DISC_OCI_STREAM_POOL_ID=""
   DISC_OCI_STREAM_POOL_NAME="$pool_name"

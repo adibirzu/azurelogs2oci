@@ -14,7 +14,7 @@ Azure Event Hub (EntraID Audit Logs)
   → Azure Function (Event Hub trigger + Cloud Provider enrichment)
   → OCI Streaming (Kafka-compatible)
   → Service Connector Hub
-  → Log Analytics (Azure EntraID Audit parser, 26 field mappings)
+  → Log Analytics (Azure Logs source, Azure EntraID Audit parser, 26 field mappings)
 ```
 
 ## Repository Layout
@@ -171,9 +171,9 @@ Deploy the OCI infrastructure directly from the OCI Console with the Resource Ma
 
 The stack creates: Stream Pool, Stream, Log Analytics Log Group, Service Connector Hub, and IAM policies. The Python helper script handles Log Analytics custom content (22 fields, 26-mapping JSON parser, source) which has no Terraform provider support.
 
-## Azure EntraID Audit Log Parser
+## Azure Logs Source & Parser
 
-The `setup_oci_log_analytics.sh` script (or `stack/scripts/setup_log_analytics.py` for Terraform deployments) creates a custom **Azure EntraID Audit JSON Parser** in OCI Log Analytics with **26 field mappings** covering the Azure EntraID [Unified Audit Log](https://learn.microsoft.com/en-us/purview/audit-log-activities) schema.
+The `setup_oci_log_analytics.sh` script (or `stack/scripts/setup_log_analytics.py` for Terraform deployments) creates a custom **Azure Logs** source and **Azure EntraID Audit JSON Parser** in OCI Log Analytics with **26 field mappings** covering the Azure EntraID [Unified Audit Log](https://learn.microsoft.com/en-us/purview/audit-log-activities) schema. The source is named generically to accommodate all Azure log types forwarded via Event Hub (e.g., EntraID Audit, Network Watcher, Azure Functions, Storage, VM diagnostics).
 
 The Azure Function injects `cloudProvider: "Azure"` into every log entry for multicloud dashboard filtering.
 

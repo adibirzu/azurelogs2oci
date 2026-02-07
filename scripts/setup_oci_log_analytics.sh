@@ -6,9 +6,9 @@
 # Creates (or reuses existing):
 #   1. Stream Pool + Stream (Kafka-compatible ingest)
 #   2. Log Analytics Log Group (AzureLogs)
-#   3. Log Analytics custom fields (Azure EntraID Audit schema)
+#   3. Log Analytics custom fields (Azure log schema)
 #   4. Log Analytics JSON parser (Azure EntraID Audit JSON Parser)
-#   5. Log Analytics source (Azure EntraID Audit Logs)
+#   5. Log Analytics source (Azure Logs)
 #   6. Service Connector Hub (Stream → Log Analytics)
 #
 # Prerequisites:
@@ -87,7 +87,7 @@ SCH_NAME="${OCI_SCH_NAME:-Azure-Stream-to-LogAnalytics}"
 
 # Parser / source names
 PARSER_NAME="azureEntraIDAuditJsonParser"
-SOURCE_NAME="Azure EntraID Audit Logs"
+SOURCE_NAME="Azure Logs"
 
 echo ""
 echo "============================================================"
@@ -299,13 +299,13 @@ else
       --compartment-id "$OCI_COMPARTMENT_ID" \
       --namespace-name "$NAMESPACE" \
       --display-name "$LOG_GROUP_NAME" \
-      --description "Azure EntraID Audit log imports via azurelogs2oci pipeline" \
+      --description "Azure log imports via azurelogs2oci pipeline" \
       --query 'data.id' --raw-output)
   ok "Log Group created: ${LOG_GROUP_ID:0:50}..."
 fi
 
 # ── 5. Create Log Analytics fields, parser, and source ────────
-echo "5/7  Creating Azure EntraID fields, parser, and source..."
+echo "5/7  Creating Azure log fields, parser, and source..."
 export LA_NAMESPACE="$NAMESPACE"
 export OCI_COMPARTMENT_ID
 export OCI_USER_OCID OCI_FINGERPRINT OCI_TENANCY_OCID OCI_REGION
@@ -348,7 +348,7 @@ JSONEOF
   oci sch service-connector create \
       --compartment-id "$OCI_COMPARTMENT_ID" \
       --display-name "$SCH_NAME" \
-      --description "Forwards Azure EntraID Audit logs from OCI Streaming to Log Analytics ($LOG_GROUP_NAME group) using Azure EntraID parser" \
+      --description "Forwards Azure logs from OCI Streaming to Log Analytics ($LOG_GROUP_NAME group)" \
       --source file:///tmp/azure_sch_source.json \
       --target file:///tmp/azure_sch_target.json \
       >/dev/null 2>&1 || true

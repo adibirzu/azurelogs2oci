@@ -3,7 +3,7 @@
 # setup_log_analytics.py
 #
 # Create OCI Log Analytics custom fields (22), JSON parser
-# (26 field mappings), and source for Azure EntraID Audit Logs.
+# (26 field mappings), and source for Azure Logs.
 #
 # This script handles the Log Analytics resources that have no
 # Terraform provider support.  Run it after `terraform apply`
@@ -303,7 +303,7 @@ def create_parser(client, namespace, field_map):
 
 # -- Source Creation -----------------------------------------------
 
-SOURCE_NAME = "Azure EntraID Audit Logs"
+SOURCE_NAME = "Azure Logs"
 
 
 def create_source(client, namespace, compartment_id):
@@ -344,10 +344,10 @@ def create_source(client, namespace, compartment_id):
         cmd = [
             "oci", "log-analytics", "source", "upsert-source",
             "--namespace-name", namespace,
-            "--name", "azureEntraIDAuditSource",
+            "--name", "azureLogsSource",
             "--display-name", SOURCE_NAME,
             "--description",
-            "Azure EntraID Audit structured logs from Event Hub via OCI Streaming. "
+            "Azure logs from Event Hub via OCI Streaming. "
             "Supports multicloud monitoring with Cloud Provider = Azure.",
             "--type-name", "os_file",
             "--is-system", "false",

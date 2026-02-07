@@ -56,7 +56,7 @@ variable "log_group_name" {
 variable "log_group_description" {
   description = "Log Analytics log group description"
   type        = string
-  default     = "Azure EntraID Audit log imports via azurelogs2oci pipeline"
+  default     = "Azure log imports via azurelogs2oci pipeline"
 }
 
 variable "log_analytics_namespace" {
@@ -76,7 +76,7 @@ variable "sch_name" {
 variable "sch_description" {
   description = "Service Connector Hub description"
   type        = string
-  default     = "Forwards Azure EntraID Audit logs from OCI Streaming to Log Analytics using Azure EntraID parser"
+  default     = "Forwards Azure logs from OCI Streaming to Log Analytics"
 }
 
 # --- IAM ---
