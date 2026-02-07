@@ -27,11 +27,11 @@ ok()   { printf "${GREEN}✅ %s${NC}\n" "$1"; }
 warn() { printf "${YELLOW}⚠️  %s${NC}\n" "$1"; }
 err()  { printf "${RED}❌ %s${NC}\n" "$1"; }
 
-# Defaults (override via flags or env)
-EVENTHUB_RG="${EVENTHUB_RG:-StreamingLogsOCI_group}"
-EVENTHUB_NAMESPACE="${EVENTHUB_NAMESPACE:-ocitests}"
-EVENTHUB_NAME="${EVENTHUB_NAME:-ocitests}"
-CONSUMER_GROUP="${EVENTHUB_CONSUMER_GROUP:-\$Default}"
+# Pre-parse defaults (may be overridden after .env is loaded)
+EVENTHUB_RG=""
+EVENTHUB_NAMESPACE=""
+EVENTHUB_NAME=""
+CONSUMER_GROUP=""
 COUNT="${COUNT:-0}"                  # sample logs to send (0 to skip)
 FROM_BEGINNING=true                   # default mode (can switch to START_ISO)
 START_ISO=""                          # ISO timestamp if provided
@@ -182,6 +182,16 @@ for candidate in "${ENV_CANDIDATES[@]}"; do
   fi
 done
 
+# Resolve variables after .env is loaded.
+# .env may use PascalCase (EventHubName) or SCREAMING_SNAKE (EVENTHUB_NAME);
+# accept both, preferring explicit SCREAMING_SNAKE if both are set.
+EVENTHUB_RG="${EVENTHUB_RG:-${AZ_RG:-}}"
+EVENTHUB_NAMESPACE="${EVENTHUB_NAMESPACE:-${EventHubNamespace:-}}"
+EVENTHUB_NAME="${EVENTHUB_NAME:-${EventHubName:-}}"
+CONSUMER_GROUP="${CONSUMER_GROUP:-${EventHubConsumerGroup:-\$Default}}"
+COUNT="${COUNT:-0}"
+INACTIVITY_TIMEOUT="${INACTIVITY_TIMEOUT:-30}"
+
 prompt_eventhub_if_missing
 
 printf "${GREEN}===============================================================================${NC}\n"
@@ -215,15 +225,22 @@ fi
 ok "Python SDKs are present"
 
 # Resolve Event Hub connection string
-info "Retrieving Event Hub connection string from Azure..."
-if ! EVENTHUB_CONNECTION_STRING="$(az eventhubs namespace authorization-rule keys list \
-  --resource-group "$EVENTHUB_RG" \
-  --namespace-name "$EVENTHUB_NAMESPACE" \
-  --name "RootManageSharedAccessKey" \
-  --query primaryConnectionString \
-  --output tsv 2>/dev/null)"; then
-  err "Failed to obtain Event Hub connection string. Check RG/namespace."
-  exit 1
+# Prefer .env value (EventHubsConnectionString or EVENTHUB_CONNECTION_STRING)
+EVENTHUB_CONNECTION_STRING="${EVENTHUB_CONNECTION_STRING:-${EventHubsConnectionString:-}}"
+
+if [[ -n "$EVENTHUB_CONNECTION_STRING" ]]; then
+  ok "Event Hub connection string loaded from environment"
+else
+  info "Retrieving Event Hub connection string from Azure..."
+  if ! EVENTHUB_CONNECTION_STRING="$(az eventhubs namespace authorization-rule keys list \
+    --resource-group "$EVENTHUB_RG" \
+    --namespace-name "$EVENTHUB_NAMESPACE" \
+    --name "RootManageSharedAccessKey" \
+    --query primaryConnectionString \
+    --output tsv 2>/dev/null)"; then
+    err "Failed to obtain Event Hub connection string. Check RG/namespace."
+    exit 1
+  fi
 fi
 
 if [[ -z "$EVENTHUB_CONNECTION_STRING" ]]; then
