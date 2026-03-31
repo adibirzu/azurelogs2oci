@@ -75,9 +75,9 @@ Local run (optional):
 }
 - Run: func start
 - For a quick local smoke test against OCI, copy `.env.example` to `.env.local` at repo root, set EventHubsConnectionString and the OCI *stream* OCID (not stream pool), then run `./scripts/drain_eventhub_to_oci.sh --from-beginning`. The script will read `.env.local` or `local.settings.json` and confirm it can put messages to OCI.
-- Need help populating `.env.local`? Run `./scripts/setup_eventhub_to_oci.sh` to auto-discover Event Hubs via Azure CLI, resolve the connection string, and prompt for OCI settings; it writes `.env.local` (git-ignored).
+- Need help populating `.env.local`? Run `./scripts/setup_eventhub_to_oci.sh` to auto-discover existing Event Hubs and OCI streams when there is a single clear match, resolve the connection string, and prompt for OCI settings; it writes `.env.local` (git-ignored).
 
-Deploy to Azure using Azure CLI (zip deploy):
+Deploy to Azure using Azure CLI / Functions Core Tools:
 1) Variables
 RG="<resource-group>"
 LOC="westeurope"
@@ -93,7 +93,7 @@ az functionapp create -g "$RG" -n "$APP" --consumption-plan-location "$LOC" --ru
 # Event Hubs + consumer group
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   EventHubsConnectionString="Endpoint=sb://<ns>.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=..." \
-  EventHubConsumerGroup="$Default" \
+  EventHubConsumerGroup='$Default' \
   EventHubName="insights-activity-logs" \
   EventHubNamesCsv="insights-activity-logs,another-hub"
 
@@ -116,8 +116,15 @@ az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   MaxBatchSize="100" MaxBatchBytes="1048576"
 # (InactivityTimeout is ignored for the Event Hub trigger)
 
-4) Package and deploy just this function folder
+4) Publish the function with remote build
 cd function/EventHubsNamespaceToOCIStreaming
+func azure functionapp publish "$APP" --python --build remote --force
+cd - 1>/dev/null
+
+Fallback if Functions Core Tools is unavailable:
+cd function/EventHubsNamespaceToOCIStreaming
+# Remove host-specific dependencies before packaging for Azure Linux
+rm -rf .python_packages
 zip -r ../../function-deploy.zip .
 cd - 1>/dev/null
 az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "function-deploy.zip"
@@ -129,6 +136,7 @@ az webapp log tail -g "$RG" -n "$APP"
 # Look for "Config summary" and per-hub "summary: sent=..." lines confirming messages are forwarded.
 - Note: logstream is not supported on Linux Consumption. Use a premium plan (EP1) via provision_azure_to_oci.sh or open Application Insights Live Metrics in the portal.
 - If you see a warning about Stream Pool OCIDs, update StreamOcid to the Stream OCID (ocid1.stream...) instead of the Stream Pool (ocid1.streampool...).
+- If you set the consumer group from a shell command, use `EventHubConsumerGroup='$Default'` so the shell preserves the literal value.
 
 Operational notes:
 - The Event Hub trigger reads continuously from the configured `EventHubName` and consumer group. Use the drain script for one-time backfill (`--from-beginning` or `--start-iso`).
@@ -139,9 +147,8 @@ Operational notes:
 - Helper script update: scripts/drain_eventhub_to_oci.sh now reads MessageEndpoint / StreamOcid from local.settings.json if OCI_MESSAGE_ENDPOINT / OCI_STREAM_OCID are not exported, preventing the “OCI_MESSAGE_ENDPOINT and/or OCI_STREAM_OCID not set” error during local validation.
 
 Packaging options (zip for portal or CI/CD)
-- Local zip: from repo root run
-  python3 -m pip install -r function/EventHubsNamespaceToOCIStreaming/requirements.txt --target function/EventHubsNamespaceToOCIStreaming/.python_packages/lib/site-packages
-  (cd function/EventHubsNamespaceToOCIStreaming && zip -qry ../../azurelogs2oci-function.zip .)
+- Local zip: build the package on Linux, or skip local dependency packaging and use a remote build. Do not upload a macOS/Windows-built `.python_packages` directory to an Azure Linux Function App.
+  (cd function/EventHubsNamespaceToOCIStreaming && rm -rf .python_packages && zip -qry ../../azurelogs2oci-function.zip .)
   Upload azurelogs2oci-function.zip to a storage container with a SAS URL and paste that URL into the portal template packageUri field.
 - GitHub Actions: trigger .github/workflows/deploy-azure-function.yml (workflow_dispatch). It builds the zip, uploads it as an artifact, and can deploy directly when AZURE_FUNCTIONAPP_PUBLISH_PROFILE is provided as a secret.
 

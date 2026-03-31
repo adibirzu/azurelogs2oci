@@ -85,13 +85,14 @@ az login                        # authenticate Azure CLI
 pip install oci                 # OCI Python SDK (for Log Analytics setup)
 
 # 2. Configure
-cp .env.example .env.local      # fill in Azure Event Hub + OCI values
+cp .env.example .env.local      # keep real values only in .env.local (gitignored)
 
 # 3. Option A: End-to-end provisioning (Azure + OCI + Log Analytics)
 ./scripts/provision_azure_to_oci.sh
 
 # 3. Option B: Step-by-step
 #    a. Set up Azure/OCI settings interactively
+#       Auto-discovers existing hubs/streams when there is a single clear match
 ./scripts/setup_eventhub_to_oci.sh
 #    b. Set up OCI Log Analytics (stream, log group, parser, source, SCH)
 ./scripts/setup_oci_log_analytics.sh
@@ -232,14 +233,14 @@ High-level steps:
    - EventHubsConnectionString, EventHubConsumerGroup, EventHubName (for the trigger), EventHubNamesCsv (scripts only)
    - MessageEndpoint (or OCI_MESSAGE_ENDPOINT), StreamOcid (or OCI_STREAM_OCID)
    - OCI credentials: user, key_content, pass_phrase (optional), fingerprint (matching the private key), tenancy, region
-5) Zip-deploy the function folder and monitor logs.
-- The provision script auto-resolves the namespace connection string (RootManageSharedAccessKey), installs Python deps into `.python_packages`, and zips the function for deployment.
+5) Publish the function and monitor logs.
+- The provision script auto-resolves the namespace connection string (RootManageSharedAccessKey), auto-discovers existing Azure/OCI resources when there is a single clear match, rejects Stream Pool OCIDs, writes `.env.local`, and prefers `func azure functionapp publish --python --build remote --force` for Linux-safe deployment.
 
 ### Local Smoke Test
 
-- Copy `.env.example` to `.env.local` (kept out of git) and fill Event Hubs connection + OCI settings. Use the OCI *stream* OCID (not the stream pool OCID) in StreamOcid/OCI_STREAM_OCID; or run `./scripts/setup_eventhub_to_oci.sh` to auto-discover hubs and build `.env.local` interactively.
+- Copy `.env.example` to `.env.local` (kept out of git) and fill Event Hubs connection + OCI settings. Use the OCI *stream* OCID (not the stream pool OCID) in StreamOcid/OCI_STREAM_OCID; or run `./scripts/setup_eventhub_to_oci.sh` to auto-discover existing Event Hubs and OCI streams and build `.env.local` interactively.
 - Run `./scripts/drain_eventhub_to_oci.sh --from-beginning` to drain locally and verify messages reach OCI Streaming.
-- For full provisioning + deployment from scratch, run `./scripts/provision_azure_to_oci.sh` (creates RG/storage/Function App, configures settings, zips, deploys, and optionally sets up OCI Log Analytics).
+- For full provisioning + deployment from scratch, run `./scripts/provision_azure_to_oci.sh` (creates RG/storage/Function App, configures settings, publishes with remote build, and optionally sets up OCI Log Analytics).
 
 ### Tail Function Logs (CLI)
 
@@ -248,6 +249,13 @@ High-level steps:
 - Note: Azure CLI/Core Tools logstream is not supported on Linux Consumption. Use `--plan premium` during provisioning (EP1) or open Application Insights Live Metrics in the portal.
 - Look for "Config summary" and "summary: sent=..." lines to confirm settings from provisioning are applied and messages are forwarded.
 - If logs show a warning about StreamOcid pointing to a Stream Pool (ocid1.streampool...), switch the setting to the Stream OCID (ocid1.stream...).
+- If you set the consumer group in a shell command, use `EventHubConsumerGroup='$Default'` so the shell does not expand `$Default` to an empty value.
+
+### Linux Deployment Caveat
+
+- Do not deploy a locally built `.python_packages` directory from macOS or Windows into an Azure Linux Function App. Native wheels from the wrong platform can prevent the host from indexing the function.
+- Preferred deployment path: `cd function/EventHubsNamespaceToOCIStreaming && func azure functionapp publish <app> --python --build remote --force`
+- GitHub Actions is safe here because the workflow builds on `ubuntu-latest`.
 
 ## Notes/Issues
 

@@ -15,6 +15,117 @@
 # results are available in DISC_* variables.
 # ─────────────────────────────────────────────────────────────
 
+# ── Shared helpers ───────────────────────────────────────────
+
+parse_eventhub_namespace_from_connection_string() {
+  local connection_string="${1:-${EventHubsConnectionString:-}}"
+  if [[ "$connection_string" =~ Endpoint=sb://([^.]+)\.servicebus\.windows\.net/? ]]; then
+    echo "${BASH_REMATCH[1]}"
+  fi
+}
+
+is_oci_stream_pool_ocid() {
+  local ocid="${1:-}"
+  [[ "$ocid" == ocid1.streampool.* ]]
+}
+
+discover_azure_defaults() {
+  local rg="${1:-${AZ_RG:-${EVENTHUB_RG:-}}}"
+
+  DISC_AZ_SUGGESTED_EVENTHUB_NAMESPACE="${EVENTHUB_NAMESPACE:-}"
+  DISC_AZ_SUGGESTED_STORAGE_ACCOUNT="${AZ_STORAGE_ACCOUNT:-}"
+  DISC_AZ_SUGGESTED_FUNCTION_APP="${AZ_FUNCTION_APP:-}"
+
+  [[ -z "$rg" ]] && return 0
+  command -v az >/dev/null 2>&1 || return 0
+  az account show >/dev/null 2>&1 || return 0
+
+  if [[ -z "$DISC_AZ_SUGGESTED_EVENTHUB_NAMESPACE" ]]; then
+    DISC_AZ_SUGGESTED_EVENTHUB_NAMESPACE="$(parse_eventhub_namespace_from_connection_string)"
+  fi
+
+  if [[ -z "$DISC_AZ_SUGGESTED_EVENTHUB_NAMESPACE" ]]; then
+    local namespaces=()
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && namespaces+=("$line")
+    done < <(az eventhubs namespace list --resource-group "$rg" --query "[].name" -o tsv 2>/dev/null)
+    if [[ ${#namespaces[@]} -eq 1 ]]; then
+      DISC_AZ_SUGGESTED_EVENTHUB_NAMESPACE="${namespaces[0]}"
+    fi
+  fi
+
+  if [[ -z "$DISC_AZ_SUGGESTED_STORAGE_ACCOUNT" ]]; then
+    local storage_accounts=()
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && storage_accounts+=("$line")
+    done < <(az storage account list --resource-group "$rg" --query "[].name" -o tsv 2>/dev/null)
+    if [[ ${#storage_accounts[@]} -eq 1 ]]; then
+      DISC_AZ_SUGGESTED_STORAGE_ACCOUNT="${storage_accounts[0]}"
+    fi
+  fi
+
+  if [[ -z "$DISC_AZ_SUGGESTED_FUNCTION_APP" ]]; then
+    local function_apps=()
+    while IFS= read -r line; do
+      [[ -n "$line" ]] && function_apps+=("$line")
+    done < <(az functionapp list --resource-group "$rg" --query "[].name" -o tsv 2>/dev/null)
+    if [[ ${#function_apps[@]} -eq 1 ]]; then
+      DISC_AZ_SUGGESTED_FUNCTION_APP="${function_apps[0]}"
+    fi
+  fi
+}
+
+discover_oci_stream_defaults() {
+  local compartment="${1:-${OCI_COMPARTMENT_ID:-${OCI_COMPARTMENT_OCID:-}}}"
+  local preferred_stream_id="${OCI_STREAM_OCID:-${StreamOcid:-}}"
+  local preferred_stream_name="${OCI_STREAM_NAME:-}"
+
+  DISC_OCI_SUGGESTED_STREAM_ID=""
+  DISC_OCI_SUGGESTED_STREAM_NAME="$preferred_stream_name"
+  DISC_OCI_SUGGESTED_MESSAGE_ENDPOINT="${OCI_MESSAGE_ENDPOINT:-${MessageEndpoint:-}}"
+  DISC_OCI_STREAM_OCID_IS_POOL="false"
+
+  [[ -z "$compartment" ]] && return 0
+  command -v oci >/dev/null 2>&1 || return 0
+
+  if [[ -n "$preferred_stream_id" ]]; then
+    if is_oci_stream_pool_ocid "$preferred_stream_id"; then
+      DISC_OCI_STREAM_OCID_IS_POOL="true"
+      return 0
+    fi
+
+    local stream_json=""
+    stream_json="$(oci streaming admin stream get --stream-id "$preferred_stream_id" 2>/dev/null || true)"
+    if [[ -n "$stream_json" ]]; then
+      DISC_OCI_SUGGESTED_STREAM_ID="$preferred_stream_id"
+      DISC_OCI_SUGGESTED_STREAM_NAME="$(printf '%s' "$stream_json" | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; print(data.get("name",""))')"
+      if [[ -z "$DISC_OCI_SUGGESTED_MESSAGE_ENDPOINT" ]]; then
+        DISC_OCI_SUGGESTED_MESSAGE_ENDPOINT="$(printf '%s' "$stream_json" | python3 -c 'import json,sys; data=json.load(sys.stdin)["data"]; print(data.get("messages-endpoint",""))')"
+      fi
+      return 0
+    fi
+  fi
+
+  local query='data[].{"id":id,"name":name,"endpoint":"messages-endpoint"}'
+  if [[ -n "$preferred_stream_name" ]]; then
+    query="data[?name=='$preferred_stream_name'].{\"id\":id,\"name\":name,\"endpoint\":\"messages-endpoint\"}"
+  fi
+
+  local streams_json=""
+  streams_json="$(oci streaming admin stream list --compartment-id "$compartment" --query "$query" 2>/dev/null || true)"
+  [[ -z "$streams_json" ]] && return 0
+
+  local count=""
+  count="$(printf '%s' "$streams_json" | python3 -c 'import json,sys; print(len(json.load(sys.stdin).get("data", [])))' 2>/dev/null || true)"
+  if [[ "$count" == "1" ]]; then
+    DISC_OCI_SUGGESTED_STREAM_ID="$(printf '%s' "$streams_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0].get("id",""))')"
+    DISC_OCI_SUGGESTED_STREAM_NAME="$(printf '%s' "$streams_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0].get("name",""))')"
+    if [[ -z "$DISC_OCI_SUGGESTED_MESSAGE_ENDPOINT" ]]; then
+      DISC_OCI_SUGGESTED_MESSAGE_ENDPOINT="$(printf '%s' "$streams_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0].get("endpoint",""))')"
+    fi
+  fi
+}
+
 # ── OCI Discovery ────────────────────────────────────────────
 
 # Populates:

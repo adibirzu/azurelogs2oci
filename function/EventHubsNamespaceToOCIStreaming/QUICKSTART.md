@@ -42,7 +42,7 @@ az functionapp create -g "$RG" -n "$APP" --consumption-plan-location "$LOC" --ru
 3) Configure app settings
 Required settings
 - EventHubsConnectionString: Namespace-level connection string with Listen (RootManageSharedAccessKey)
-- EventHubConsumerGroup: Consumer group name (e.g., $Default)
+- EventHubConsumerGroup: Consumer group name (for shell examples, use `'$Default'` literally)
 - EventHubName: The single Event Hub bound to the Function trigger
 - EventHubNamesCsv: Optional CSV of hubs for helper scripts (drain/backfill)
 - MessageEndpoint: OCI messages endpoint (https://cell-1.streaming.<region>.oci.oraclecloud.com)
@@ -59,7 +59,7 @@ Example commands:
 # Event Hubs + consumer group
 az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   EventHubsConnectionString="Endpoint=sb://<ns>.servicebus.windows.net/;SharedAccessKeyName=RootManageSharedAccessKey;SharedAccessKey=..." \
-  EventHubConsumerGroup="$Default" \
+  EventHubConsumerGroup='$Default' \
   EventHubName="insights-activity-logs"
 
 # OCI target
@@ -81,8 +81,15 @@ az functionapp config appsettings set -g "$RG" -n "$APP" --settings \
   MaxBatchSize="100" MaxBatchBytes="1048576"
 # (InactivityTimeout is ignored for the Event Hub trigger; batching is what matters here)
 
-4) Package and deploy the function
+4) Publish the function with remote build
 cd function/EventHubsNamespaceToOCIStreaming
+func azure functionapp publish "$APP" --python --build remote --force
+cd - 1>/dev/null
+
+Fallback if Functions Core Tools is unavailable:
+cd function/EventHubsNamespaceToOCIStreaming
+# Remove host-specific dependencies before packaging for Azure Linux
+rm -rf .python_packages
 zip -r ../../function-deploy.zip .
 cd - 1>/dev/null
 az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "function-deploy.zip"
@@ -96,7 +103,7 @@ Alternative: Azure Portal (custom deployment)
 CI/CD via GitHub Actions (manual)
 - Trigger .github/workflows/deploy-azure-function.yml with inputs.function_app_name set to your target Function App
 - Add secret AZURE_FUNCTIONAPP_PUBLISH_PROFILE (get from Function App > Overview > Get publish profile)
-- The workflow builds a zip with dependencies under .python_packages, publishes it as an artifact, and deploys it to your Function App
+- The workflow builds on `ubuntu-latest`, publishes the zip as an artifact, and deploys it to your Function App. That Linux build is safe for Azure Linux.
 
 5) Validate
 - Tail logs (choose one):
@@ -107,17 +114,20 @@ CI/CD via GitHub Actions (manual)
 - A "Config summary" line will echo the hubs, consumer group, and masked endpoint/stream OCID to confirm settings from provisioning are applied.
 - Note: logstream is not supported on Linux Consumption. Use a premium plan (EP1) via provision_azure_to_oci.sh or open Application Insights Live Metrics in the portal.
 - If you see a warning about Stream Pool OCIDs, update StreamOcid to the Stream OCID (ocid1.stream...) instead of the Stream Pool (ocid1.streampool...).
+- `az functionapp function list -g "$RG" -n "$APP"` should show `eventhub_to_oci` after deployment.
 - Verify messages arrive in your OCI Streaming stream
 
 Notes and troubleshooting
-- This function uses @latest as starting position per run, and uses a short inactivity window (InactivityTimeout) to end each receive pass. For continuous processing across hubs, keep the schedule frequent (default every minute).
+- This is an Event Hub trigger, not a timer-based poller. Once the Function App is running, Azure invokes it as events arrive on the configured Event Hub and consumer group.
 - To retain checkpoints across runs, you can integrate Azure Blob Storage checkpointing (not included by default).
 - Use a dedicated consumer group to avoid interfering with other consumers.
 - Ensure outbound network access from the Function App to OCI endpoint.
 - Secure key_content via Azure Key Vault (Key Vault references in app settings) for production.
+- Do not deploy a locally built `.python_packages` directory from macOS or Windows into an Azure Linux Function App; use remote build instead.
 
 Helper script note
 - scripts/drain_eventhub_to_oci.sh now falls back to MessageEndpoint / StreamOcid from local.settings.json if OCI_MESSAGE_ENDPOINT / OCI_STREAM_OCID env vars are absent, avoiding missing-variable errors during dry runs.
+- scripts/setup_eventhub_to_oci.sh now auto-discovers existing Event Hubs and OCI streams when there is a single clear match and writes `.env.local` with shell-safe quoting.
 
 Minimal local testing (optional)
 Create a local.settings.json (do not commit):
@@ -154,7 +164,7 @@ Repository cleanup status
   - drain_eventhub_to_oci.sh (ad-hoc drains; optional)
   - eventhub_consumer.py (ad-hoc drains; optional)
 
-That's it — your Function App will poll the configured Event Hubs and forward messages to OCI Streaming on the defined schedule.
+That's it — your Function App will process the configured Event Hub in real time and forward messages to OCI Streaming.
 
 6) Complete the pipeline to OCI Log Analytics (optional)
 To get logs into OCI Log Analytics with a custom Azure EntraID parser (26 field mappings), run the OCI Log Analytics setup:

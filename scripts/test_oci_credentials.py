@@ -7,16 +7,84 @@ import os
 import sys
 import json
 import logging
+import re
 from dotenv import load_dotenv
 
 # Add the function directory to path (eventhub_to_oci package)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'function', 'EventHubsNamespaceToOCIStreaming', 'eventhub_to_oci'))
 
-# Import the function's OCI utilities
-from __init__ import get_oci_config_from_env, validate_env, mask, parse_key
+try:
+    # Import the function's OCI utilities when Azure Functions deps are present.
+    from __init__ import get_oci_config_from_env, validate_env, mask, parse_key
+except ModuleNotFoundError as exc:
+    if exc.name != "azure.functions":
+        raise
+
+    def parse_key(key_input: str) -> str:
+        try:
+            import textwrap
+
+            normalized = (key_input or "").replace("\\n", "\n").strip()
+            begin_line = re.search(r'-----BEGIN [A-Z ]+-----', normalized).group()
+            end_line = re.search(r'-----END [A-Z ]+-----', normalized).group()
+            key_block = normalized[normalized.index(begin_line) + len(begin_line): normalized.index(end_line)]
+
+            encr_lines = ''
+            proc_type_line = re.search(r'Proc-Type: [^\n]+', key_block)
+            dec_info_line = re.search(r'DEK-Info: [^\n]+', key_block)
+            if proc_type_line:
+                encr_lines += proc_type_line.group().strip() + '\n'
+                key_block = key_block.replace(proc_type_line.group(), '')
+            if dec_info_line:
+                encr_lines += dec_info_line.group().strip() + '\n'
+                key_block = key_block.replace(dec_info_line.group(), '')
+
+            body_compact = re.sub(r'\s+', '', key_block)
+            wrapped_body = '\n'.join(textwrap.wrap(body_compact, 64))
+            parts = [begin_line]
+            if encr_lines:
+                parts.append(encr_lines.rstrip('\n'))
+            parts.append(wrapped_body)
+            parts.append(end_line)
+            return '\n'.join(parts)
+        except Exception as error:
+            raise Exception('Error while reading private key.') from error
+
+    def mask(value: str, keep: int = 6) -> str:
+        if not value:
+            return ""
+        if len(value) <= keep:
+            return "***"
+        return f"{value[:keep]}...***"
+
+    def get_oci_config_from_env() -> dict:
+        return {
+            "user": os.environ['user'],
+            "key_content": parse_key(os.environ['key_content']),
+            "pass_phrase": os.environ.get('pass_phrase', ''),
+            "fingerprint": os.environ['fingerprint'],
+            "tenancy": os.environ['tenancy'],
+            "region": os.environ['region'],
+        }
+
+    def validate_env():
+        endpoint = env_value("MessageEndpoint", "OCI_MESSAGE_ENDPOINT")
+        stream_ocid = env_value("StreamOcid", "OCI_STREAM_OCID")
+        if not endpoint or not stream_ocid:
+            raise RuntimeError("Missing MessageEndpoint/StreamOcid (or OCI_MESSAGE_ENDPOINT/OCI_STREAM_OCID)")
+        if "streampool" in stream_ocid:
+            raise RuntimeError("StreamOcid points to a Stream Pool. Use the Stream OCID (ocid1.stream...) instead.")
+        return endpoint, stream_ocid
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def env_value(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return ""
 
 def test_oci_credentials():
     """Test OCI credentials and connectivity"""
@@ -47,17 +115,25 @@ def test_oci_credentials():
         print("❌ No .env.local or .env file found. Checking environment variables directly...")
 
     # Check environment variables
-    required_vars = ['user', 'key_content', 'fingerprint', 'tenancy', 'region', 'MessageEndpoint', 'StreamOcid']
+    required_vars = [
+        ('user', ('user',)),
+        ('key_content', ('key_content',)),
+        ('fingerprint', ('fingerprint',)),
+        ('tenancy', ('tenancy',)),
+        ('region', ('region',)),
+        ('MessageEndpoint', ('OCI_MESSAGE_ENDPOINT', 'MessageEndpoint')),
+        ('StreamOcid', ('OCI_STREAM_OCID', 'StreamOcid')),
+    ]
     missing_vars = []
 
     print("\n🔍 Environment Variables Check:")
-    for var in required_vars:
-        value = os.getenv(var)
+    for label, candidates in required_vars:
+        value = env_value(*candidates)
         if value:
-            print(f"  ✅ {var}: {mask(value)}")
+            print(f"  ✅ {label}: {mask(value)}")
         else:
-            print(f"  ❌ {var}: NOT SET")
-            missing_vars.append(var)
+            print(f"  ❌ {label}: NOT SET")
+            missing_vars.append(label)
 
     if missing_vars:
         print(f"\n❌ Missing required environment variables: {', '.join(missing_vars)}")
@@ -87,13 +163,14 @@ def test_oci_credentials():
         # Test Stream client initialization
         print("\n🌐 Testing OCI Stream Client...")
         stream_client = oci.streaming.StreamClient(cfg, service_endpoint=endpoint)
+        admin_client = oci.streaming.StreamAdminClient(cfg)
         print("✅ OCI Stream client initialized successfully")
 
         # Try a simple API call to test authentication
         print("\n🔐 Testing OCI Authentication...")
         try:
             # Try to get stream info (this will test if credentials work)
-            response = stream_client.get_stream(stream_ocid)
+            response = admin_client.get_stream(stream_ocid)
             print("✅ OCI authentication successful!")
             print(f"   Stream name: {response.data.name}")
             print(f"   Stream state: {response.data.lifecycle_state}")
@@ -129,7 +206,53 @@ def test_sample_message():
 
     try:
         # Import the OCI sender
-        from __init__ import OciStreamSender, HubBuffer
+        try:
+            from __init__ import OciStreamSender, HubBuffer
+        except ModuleNotFoundError as exc:
+            if exc.name != "azure.functions":
+                raise
+
+            from base64 import b64encode
+            from oci.streaming.models import PutMessagesDetails, PutMessagesDetailsEntry
+
+            class OciStreamSender:
+                def __init__(self, config: dict, message_endpoint: str, stream_ocid: str):
+                    import oci
+
+                    oci.config.validate_config(config)
+                    self.client = oci.streaming.StreamClient(config, service_endpoint=message_endpoint)
+                    self.stream_ocid = stream_ocid
+
+                def send_batch(self, payloads):
+                    entries = [
+                        PutMessagesDetailsEntry(value=b64encode(payload.encode("utf-8")).decode("utf-8"))
+                        for payload in payloads
+                    ]
+                    req = PutMessagesDetails(messages=entries)
+                    resp = self.client.put_messages(self.stream_ocid, req)
+                    sent = failed = 0
+                    for entry in (resp.data.entries or []):
+                        if getattr(entry, "error", None):
+                            failed += 1
+                        else:
+                            sent += 1
+                    return sent, failed
+
+            class HubBuffer:
+                def __init__(self, sender, max_count: int, max_bytes: int):
+                    self.sender = sender
+                    self.sent = 0
+                    self.failed = 0
+                    self.buf = []
+
+                def add(self, payload: str):
+                    self.buf.append(payload)
+
+                def flush(self):
+                    sent, failed = self.sender.send_batch(self.buf)
+                    self.sent += sent
+                    self.failed += failed
+                    self.buf.clear()
 
         # Get configuration
         endpoint, stream_ocid = validate_env()

@@ -8,6 +8,13 @@ import sys
 import re
 from dotenv import load_dotenv
 
+def env_value(*names: str) -> str:
+    for name in names:
+        value = os.getenv(name)
+        if value:
+            return value
+    return ""
+
 def parse_key(key_input: str) -> str:
     """Parse OCI private key from single-line format into PEM, tolerating trailing text"""
     try:
@@ -81,16 +88,24 @@ def test_oci_credentials():
         print("❌ No .env.local or .env file found in candidate locations")
 
     # Check environment variables
-    required_vars = ['user', 'key_content', 'fingerprint', 'tenancy', 'region', 'MessageEndpoint', 'StreamOcid']
+    required_vars = [
+        ('user', ('user',)),
+        ('key_content', ('key_content',)),
+        ('fingerprint', ('fingerprint',)),
+        ('tenancy', ('tenancy',)),
+        ('region', ('region',)),
+        ('MessageEndpoint', ('OCI_MESSAGE_ENDPOINT', 'MessageEndpoint')),
+        ('StreamOcid', ('OCI_STREAM_OCID', 'StreamOcid')),
+    ]
 
     print("\n🔍 Environment Variables Check:")
     all_present = True
-    for var in required_vars:
-        value = os.getenv(var)
+    for label, candidates in required_vars:
+        value = env_value(*candidates)
         if value:
-            print(f"  ✅ {var}: {mask(value)}")
+            print(f"  ✅ {label}: {mask(value)}")
         else:
-            print(f"  ❌ {var}: NOT SET")
+            print(f"  ❌ {label}: NOT SET")
             all_present = False
 
     if not all_present:
@@ -98,8 +113,8 @@ def test_oci_credentials():
         print("\n🔧 For Azure Function deployment, ensure these are set in:")
         print("   Azure Portal → Function App → Configuration → Application Settings")
         print("\nRequired variables:")
-        for var in required_vars:
-            print(f"   - {var}")
+        for label, _ in required_vars:
+            print(f"   - {label}")
         return False
 
     # Test OCI config building
@@ -123,8 +138,8 @@ def test_oci_credentials():
         print("✅ OCI configuration validation passed")
 
         # Test endpoint and stream OCID
-        endpoint = os.getenv("OCI_MESSAGE_ENDPOINT") or os.getenv("MessageEndpoint")
-        stream_ocid = os.getenv("OCI_STREAM_OCID") or os.getenv("StreamOcid")
+        endpoint = env_value("OCI_MESSAGE_ENDPOINT", "MessageEndpoint")
+        stream_ocid = env_value("OCI_STREAM_OCID", "StreamOcid")
 
         if "streampool" in stream_ocid:
             print("❌ StreamOcid appears to be a Stream Pool OCID, not a Stream OCID")
