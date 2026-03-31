@@ -13,7 +13,7 @@
 #
 # Prerequisites:
 #   - oci CLI configured (oci setup config)
-#   - .env populated with OCI variables (or prompted)
+#   - .env.local populated with OCI variables (or prompted)
 #   - Python 3 + oci-sdk (pip install oci)
 #
 # Usage:
@@ -23,7 +23,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_PATH="$REPO_ROOT/.env"
+ENV_PATH="$REPO_ROOT/.env.local"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
@@ -108,7 +108,7 @@ echo ""
 if [[ -z "$NAMESPACE" ]]; then
   if [[ -z "$OCI_TENANCY_OCID" ]]; then
     err "OCI tenancy OCID is required for namespace detection."
-    err "Set 'tenancy' or 'OCI_TENANCY_OCID' in .env."
+    err "Set 'tenancy' or 'OCI_TENANCY_OCID' in .env.local."
     exit 1
   fi
   info "Detecting Log Analytics namespace..."
@@ -400,7 +400,7 @@ if [[ "$KAFKA_ENDPOINT" != "N/A" ]]; then
   MSG_ENDPOINT="https://$(echo "$KAFKA_ENDPOINT" | cut -d: -f1)"
 fi
 
-# ── Persist all OCIDs to .env ─────────────────────────────────
+# ── Persist all OCIDs to .env.local ───────────────────────────
 info "Persisting resource IDs to $ENV_PATH..."
 update_env_var "OCI_STREAM_POOL_ID" "$POOL_ID" "$ENV_PATH"
 update_env_var "OCI_STREAM_POOL_NAME" "$STREAM_POOL_NAME" "$ENV_PATH"
@@ -417,14 +417,14 @@ update_env_var "OCI_SCH_NAME" "$SCH_NAME" "$ENV_PATH"
 if [[ -n "$MSG_ENDPOINT" ]]; then
   update_env_var "OCI_MESSAGE_ENDPOINT" "$MSG_ENDPOINT" "$ENV_PATH"
 fi
-ok "Resource IDs saved to .env"
+ok "Resource IDs saved to .env.local"
 
 echo ""
 echo "============================================================"
 echo "  OCI Log Analytics Setup Complete"
 echo "============================================================"
 echo ""
-echo "Persisted to .env:"
+echo "Persisted to .env.local:"
 echo "  OCI_STREAM_OCID=$STREAM_ID"
 echo "  OCI_STREAM_POOL_ID=$POOL_ID"
 if [[ -n "$MSG_ENDPOINT" ]]; then

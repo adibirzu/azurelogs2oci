@@ -79,9 +79,9 @@ GitHub Actions option:
 - For Linux Consumption, logstream in CLI may be unavailable; use EP1 or Application Insights Live Metrics.
 
 ## Step 5: Backfill and local validation (optional)
-- Generate a local .env interactively: `./scripts/setup_eventhub_to_oci.sh` (discovers hubs, resolves connection string).  
+- Generate a local `.env.local` interactively: `./scripts/setup_eventhub_to_oci.sh` (discovers hubs, resolves connection string).
 - Drain/backfill locally: `./scripts/drain_eventhub_to_oci.sh --from-beginning` (uses EventHubName/consumer group and writes to OCI).  
-- Quick credential check: `python scripts/test_oci_simple.py` (requires .env).  
+- Quick credential check: `python scripts/test_oci_simple.py` (prefers `.env.local`, falls back to legacy `.env`).
 - [Screenshot: Terminal output from drain script showing sent counts]  
 
 ## Operational tips

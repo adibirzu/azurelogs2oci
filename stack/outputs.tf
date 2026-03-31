@@ -42,7 +42,7 @@ output "service_connector_id" {
 }
 
 output "env_snippet" {
-  description = "Ready-to-paste values for .env"
+  description = "Ready-to-paste values for .env.local"
   value       = <<-EOT
     OCI_STREAM_OCID=${local.stream_id}
     OCI_STREAM_POOL_ID=${local.stream_pool_id}

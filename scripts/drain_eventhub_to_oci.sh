@@ -27,7 +27,7 @@ ok()   { printf "${GREEN}✅ %s${NC}\n" "$1"; }
 warn() { printf "${YELLOW}⚠️  %s${NC}\n" "$1"; }
 err()  { printf "${RED}❌ %s${NC}\n" "$1"; }
 
-# Pre-parse defaults (may be overridden after .env is loaded)
+# Pre-parse defaults (may be overridden after local env is loaded)
 EVENTHUB_RG=""
 EVENTHUB_NAMESPACE=""
 EVENTHUB_NAME=""
@@ -38,7 +38,7 @@ START_ISO=""                          # ISO timestamp if provided
 INACTIVITY_TIMEOUT="${INACTIVITY_TIMEOUT:-30}"
 ALL_EVENTHUBS="${ALL_EVENTHUBS:-false}"
 LOCAL_SETTINGS_PATH="${LOCAL_SETTINGS_PATH:-$SCRIPT_DIR/../function/EventHubsNamespaceToOCIStreaming/local.settings.json}"
-ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/.env}"
+ENV_FILE="${ENV_FILE:-$SCRIPT_DIR/../.env.local}"
 
 prompt_eventhub_if_missing() {
   if [[ "$ALL_EVENTHUBS" == true ]]; then
@@ -168,9 +168,9 @@ EOF
   esac
 done
 
-# Optional .env overrides (useful for local testing)
+# Optional .env.local overrides (useful for local testing)
 # Load env overrides (prefers explicit ENV_FILE, then common locations)
-ENV_CANDIDATES=("$ENV_FILE" "$SCRIPT_DIR/../.env" "$PWD/.env")
+ENV_CANDIDATES=("$ENV_FILE" "$SCRIPT_DIR/../.env.local" "$SCRIPT_DIR/../.env" "$PWD/.env.local" "$PWD/.env")
 for candidate in "${ENV_CANDIDATES[@]}"; do
   if [[ -f "$candidate" ]]; then
     info "Loading overrides from $candidate"
@@ -182,8 +182,8 @@ for candidate in "${ENV_CANDIDATES[@]}"; do
   fi
 done
 
-# Resolve variables after .env is loaded.
-# .env may use PascalCase (EventHubName) or SCREAMING_SNAKE (EVENTHUB_NAME);
+# Resolve variables after local env is loaded.
+# .env.local may use PascalCase (EventHubName) or SCREAMING_SNAKE (EVENTHUB_NAME);
 # accept both, preferring explicit SCREAMING_SNAKE if both are set.
 EVENTHUB_RG="${EVENTHUB_RG:-${AZ_RG:-}}"
 EVENTHUB_NAMESPACE="${EVENTHUB_NAMESPACE:-${EventHubNamespace:-}}"
@@ -225,7 +225,7 @@ fi
 ok "Python SDKs are present"
 
 # Resolve Event Hub connection string
-# Prefer .env value (EventHubsConnectionString or EVENTHUB_CONNECTION_STRING)
+# Prefer local env value (EventHubsConnectionString or EVENTHUB_CONNECTION_STRING)
 EVENTHUB_CONNECTION_STRING="${EVENTHUB_CONNECTION_STRING:-${EventHubsConnectionString:-}}"
 
 if [[ -n "$EVENTHUB_CONNECTION_STRING" ]]; then

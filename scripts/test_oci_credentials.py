@@ -28,8 +28,10 @@ def test_oci_credentials():
 
     # Try to load environment variables
     env_candidates = [
-        os.path.join(os.path.dirname(__file__), '.env'),
+        os.path.join(os.path.dirname(__file__), '.env.local'),
+        os.path.join(os.path.dirname(__file__), '..', '.env.local'),
         os.path.join(os.path.dirname(__file__), '..', '.env'),
+        os.path.join(os.path.dirname(__file__), '..', 'function', 'EventHubsNamespaceToOCIStreaming', '.env.local'),
         os.path.join(os.path.dirname(__file__), '..', 'function', 'EventHubsNamespaceToOCIStreaming', '.env')
     ]
 
@@ -42,7 +44,7 @@ def test_oci_credentials():
             break
 
     if not env_loaded:
-        print("❌ No .env file found. Checking environment variables directly...")
+        print("❌ No .env.local or .env file found. Checking environment variables directly...")
 
     # Check environment variables
     required_vars = ['user', 'key_content', 'fingerprint', 'tenancy', 'region', 'MessageEndpoint', 'StreamOcid']

@@ -59,26 +59,36 @@ prompt_yn() {
 # ── Environment file helpers ─────────────────────────────────
 
 # load_env [path]
-#   Source .env file with tolerance for unset variables.
-#   Defaults to $REPO_ROOT/.env if no argument given.
+#   Source .env.local (preferred) or legacy .env with tolerance for unset variables.
+#   Defaults to $REPO_ROOT/.env.local if no argument given.
 load_env() {
-  local env_path="${1:-${REPO_ROOT:-.}/.env}"
+  local env_path="${1:-${REPO_ROOT:-.}/.env.local}"
+  local legacy_env_path=""
+  if [[ ! -f "$env_path" && "$env_path" == *.env.local ]]; then
+    legacy_env_path="${env_path%.local}"
+  fi
   if [[ -f "$env_path" ]]; then
     info "Loading existing values from $env_path"
     set +u; set -a
     # shellcheck disable=SC1090
     source "$env_path"
     set +a; set -u
+  elif [[ -n "$legacy_env_path" && -f "$legacy_env_path" ]]; then
+    info "Loading existing values from $legacy_env_path"
+    set +u; set -a
+    # shellcheck disable=SC1090
+    source "$legacy_env_path"
+    set +a; set -u
   fi
 }
 
 # update_env_var KEY VALUE [file]
-#   Add or update a KEY=VALUE pair in .env without clobbering other entries.
+#   Add or update a KEY=VALUE pair in .env.local without clobbering other entries.
 #   Creates the file if it doesn't exist.
 #   Uses temp-file + mv instead of sed -i for macOS/Linux portability.
 update_env_var() {
   local key="$1" value="$2"
-  local env_file="${3:-${REPO_ROOT:-.}/.env}"
+  local env_file="${3:-${REPO_ROOT:-.}/.env.local}"
 
   # Ensure file exists
   if [[ ! -f "$env_file" ]]; then

@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Interactive helper to collect Azure Event Hub + OCI Streaming settings and write a local .env
+# Interactive helper to collect Azure Event Hub + OCI Streaming settings and write a local .env.local
 # - Discovers Event Hubs via Azure CLI (allows multi-select)
 # - Resolves the Event Hubs connection string via Azure CLI (RootManageSharedAccessKey)
 # - Prompts for OCI stream endpoint/OCID and credentials
-# - Writes .env (git-ignored) for use by drain_eventhub_to_oci.sh and local.settings.json generation
+# - Writes .env.local (git-ignored) for use by drain_eventhub_to_oci.sh and local.settings.json generation
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_PATH="$REPO_ROOT/.env"
+ENV_PATH="$REPO_ROOT/.env.local"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
@@ -16,7 +16,7 @@ source "$SCRIPT_DIR/lib/common.sh"
 require_cmd az
 require_cmd python3
 
-# Preload existing .env to reuse values if present
+# Preload existing local env to reuse values if present
 load_env "$ENV_PATH"
 
 RG_DEFAULT="${EVENTHUB_RG:-}"
@@ -104,7 +104,7 @@ if [[ -z "$key_content" || "$key_content" == "-----BEGIN PRIVATE KEY----- ... --
   if [[ -n "$key_path" && -f "$key_path" ]]; then
     key_content="$(cat "$key_path")"
   else
-    key_content="$(prompt_secret "Paste OCI private key content (will be written to .env)")"
+    key_content="$(prompt_secret "Paste OCI private key content (will be written to .env.local)")"
   fi
 fi
 pass_phrase="$(prompt_default "OCI key pass phrase (blank if none)" "${pass_phrase:-}")"

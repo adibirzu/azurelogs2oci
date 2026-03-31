@@ -88,7 +88,7 @@ discover_oci_resources() {
     DISC_OCI_STREAM_ID="$stream_result"
   fi
 
-  # Also check .env for stream OCID
+  # Also check local env for stream OCID
   if [[ -z "$DISC_OCI_STREAM_ID" ]]; then
     local env_stream="${OCI_STREAM_OCID:-${StreamOcid:-}}"
     if [[ -n "$env_stream" && "$env_stream" != "null" && "$env_stream" != *"example"* ]]; then

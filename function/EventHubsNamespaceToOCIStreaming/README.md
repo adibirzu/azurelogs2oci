@@ -28,7 +28,7 @@ Supported configuration (App Settings):
   - MaxBatchBytes (default 1048576): Maximum batch size in bytes (1MB OCI limit)
 
 Deploy from Azure portal (custom template)
-- Use deploy/azuredeploy.json with Azure Portal > Create a resource > Template deployment (custom). The template prompts for Function App name, Event Hubs connection, consumer group, CSV of hubs, OCI credentials, message endpoint, stream OCID, and optional batch sizes.
+- Use deploy/azuredeploy.json with Azure Portal > Create a resource > Template deployment (custom). The template prompts for Function App name, Event Hubs connection, consumer group, the single `EventHubName` required by the trigger, optional CSV of hubs for helper scripts, OCI credentials, message endpoint, stream OCID, and optional batch sizes.
 - Provide an HTTPS URL to the packaged zip (WEBSITE_RUN_FROM_PACKAGE) so the portal can deploy without CLI. You can generate the zip locally or use the GitHub Actions artifact described below.
 
 Trigger:
@@ -74,8 +74,8 @@ Local run (optional):
   }
 }
 - Run: func start
-- For a quick local smoke test against OCI, copy .env.example to .env at repo root, set EventHubsConnectionString and the OCI *stream* OCID (not stream pool), then run ./scripts/drain_eventhub_to_oci.sh --from-beginning. The script will read .env/local.settings.json and confirm it can put messages to OCI.
-- Need help populating .env? Run ./scripts/setup_eventhub_to_oci.sh to auto-discover Event Hubs via Azure CLI, resolve the connection string, and prompt for OCI settings; it writes .env (git-ignored).
+- For a quick local smoke test against OCI, copy `.env.example` to `.env.local` at repo root, set EventHubsConnectionString and the OCI *stream* OCID (not stream pool), then run `./scripts/drain_eventhub_to_oci.sh --from-beginning`. The script will read `.env.local` or `local.settings.json` and confirm it can put messages to OCI.
+- Need help populating `.env.local`? Run `./scripts/setup_eventhub_to_oci.sh` to auto-discover Event Hubs via Azure CLI, resolve the connection string, and prompt for OCI settings; it writes `.env.local` (git-ignored).
 
 Deploy to Azure using Azure CLI (zip deploy):
 1) Variables

@@ -32,7 +32,7 @@ Azure Event Hub (EntraID Audit Logs)
 │   ├── discover_resources.sh          # Azure + OCI backend resource discovery
 │   ├── provision_azure_to_oci.sh      # End-to-end provisioning (Azure + OCI + Log Analytics)
 │   ├── setup_oci_log_analytics.sh     # OCI Log Analytics setup (stream, log group, parser, source, SCH)
-│   ├── setup_eventhub_to_oci.sh       # Interactive helper to collect settings and write .env
+│   ├── setup_eventhub_to_oci.sh       # Interactive helper to collect settings and write .env.local
 │   ├── drain_eventhub_to_oci.sh       # Ad-hoc drain from Event Hub to OCI
 │   ├── teardown_azurelogs2oci.sh      # Destroy Azure + OCI resources (reverse of setup)
 │   ├── teardown_oci_log_analytics.py  # Delete LA custom content (source, parser, fields)
@@ -50,7 +50,7 @@ Azure Event Hub (EntraID Audit Logs)
 ├── docs/
 │   ├── EVENT_FORMAT_DOCUMENTATION.md  # Notes on expected event formats and metadata
 │   └── blog-azurelogs-to-oci-streaming.md  # Blog-ready walkthrough
-├── .env.example                       # Configuration template (copy to .env)
+├── .env.example                       # Configuration template (copy to .env.local)
 └── LICENSE.txt                        # UPL v1.0
 ```
 
@@ -85,7 +85,7 @@ az login                        # authenticate Azure CLI
 pip install oci                 # OCI Python SDK (for Log Analytics setup)
 
 # 2. Configure
-cp .env.example .env            # fill in Azure Event Hub + OCI values
+cp .env.example .env.local      # fill in Azure Event Hub + OCI values
 
 # 3. Option A: End-to-end provisioning (Azure + OCI + Log Analytics)
 ./scripts/provision_azure_to_oci.sh
@@ -127,7 +127,7 @@ Remove all provisioned Azure and OCI resources when you're done testing or want 
 ./scripts/teardown_azurelogs2oci.sh --oci-only --keep-fields
 ```
 
-The teardown script sources `.env` to discover resource IDs and names automatically. It deletes resources in reverse dependency order (SCH first, then Stream Pool last) and handles already-deleted resources gracefully.
+The teardown script sources `.env.local` (and falls back to legacy `.env`) to discover resource IDs and names automatically. It deletes resources in reverse dependency order (SCH first, then Stream Pool last) and handles already-deleted resources gracefully.
 
 The setup scripts (`setup_oci_log_analytics.sh`, `provision_azure_to_oci.sh`) also offer a built-in **destroy & recreate** option: run the setup script and choose option `[3]` from the discovery menu to tear down existing resources inline before creating new ones.
 
@@ -237,7 +237,7 @@ High-level steps:
 
 ### Local Smoke Test
 
-- Copy .env.example to .env (kept out of git) and fill Event Hubs connection + OCI settings. Use the OCI *stream* OCID (not the stream pool OCID) in StreamOcid/OCI_STREAM_OCID; or run `./scripts/setup_eventhub_to_oci.sh` to auto-discover hubs and build .env interactively.
+- Copy `.env.example` to `.env.local` (kept out of git) and fill Event Hubs connection + OCI settings. Use the OCI *stream* OCID (not the stream pool OCID) in StreamOcid/OCI_STREAM_OCID; or run `./scripts/setup_eventhub_to_oci.sh` to auto-discover hubs and build `.env.local` interactively.
 - Run `./scripts/drain_eventhub_to_oci.sh --from-beginning` to drain locally and verify messages reach OCI Streaming.
 - For full provisioning + deployment from scratch, run `./scripts/provision_azure_to_oci.sh` (creates RG/storage/Function App, configures settings, zips, deploys, and optionally sets up OCI Log Analytics).
 

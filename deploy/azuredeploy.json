@@ -43,10 +43,17 @@
         "description": "Consumer group to use."
       }
     },
-    "eventHubNamesCsv": {
+    "eventHubName": {
       "type": "string",
       "metadata": {
-        "description": "Comma-separated list of Event Hub entity names."
+        "description": "Single Event Hub entity name bound to the Function trigger."
+      }
+    },
+    "eventHubNamesCsv": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Optional comma-separated list of Event Hub entity names for helper scripts. Leave empty to reuse EventHubName."
       }
     },
     "messageEndpoint": {
@@ -207,8 +214,12 @@
               "value": "[parameters('eventHubConsumerGroup')]"
             },
             {
+              "name": "EventHubName",
+              "value": "[parameters('eventHubName')]"
+            },
+            {
               "name": "EventHubNamesCsv",
-              "value": "[parameters('eventHubNamesCsv')]"
+              "value": "[if(equals(parameters('eventHubNamesCsv'), ''), parameters('eventHubName'), parameters('eventHubNamesCsv'))]"
             },
             {
               "name": "MessageEndpoint",

@@ -89,7 +89,7 @@ az functionapp deployment source config-zip -g "$RG" -n "$APP" --src "function-d
 
 Alternative: Azure Portal (custom deployment)
 - Go to Azure Portal > Create a resource > Template deployment (deploy a custom template)
-- Upload deploy/azuredeploy.json and fill values (Function App name, Event Hubs connection string, consumer group, EventHubNamesCsv, OCI credentials, MessageEndpoint, StreamOcid, optional batch settings)
+- Upload `deploy/azuredeploy.json` and fill values (Function App name, Event Hubs connection string, consumer group, required `EventHubName`, optional `EventHubNamesCsv`, OCI credentials, MessageEndpoint, StreamOcid, optional batch settings)
 - PackageUri: provide an HTTPS URL to the zip produced locally or by the GitHub Actions workflow (upload the zip to a storage container with SAS)
 - Review + create, then validate in Function App > Configuration and log stream
 
@@ -142,10 +142,10 @@ Create a local.settings.json (do not commit):
 }
 Then:
 func start
-- Alternative smoke test: copy .env.example to .env in the repo root, set EventHubsConnectionString and the OCI *stream* OCID (not the stream pool OCID), and run:
+- Alternative smoke test: copy `.env.example` to `.env.local` in the repo root, set EventHubsConnectionString and the OCI *stream* OCID (not the stream pool OCID), and run:
   ./scripts/drain_eventhub_to_oci.sh --from-beginning
   This drains locally and confirms messages can be written to OCI Streaming.
-- To generate .env interactively (discovers Event Hubs via Azure CLI), run:
+- To generate `.env.local` interactively (discovers Event Hubs via Azure CLI), run:
   ./scripts/setup_eventhub_to_oci.sh
 
 Repository cleanup status

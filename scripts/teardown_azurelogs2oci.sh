@@ -20,7 +20,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-ENV_PATH="$REPO_ROOT/.env"
+ENV_PATH="$REPO_ROOT/.env.local"
 
 # shellcheck source=lib/common.sh
 source "$SCRIPT_DIR/lib/common.sh"
@@ -63,10 +63,10 @@ EOF
   esac
 done
 
-# ── Load .env ────────────────────────────────────────────────
+# ── Load .env.local ──────────────────────────────────────────
 load_env "$ENV_PATH"
 
-# Resolve variables from .env
+# Resolve variables from .env.local
 OCI_COMPARTMENT_ID="${OCI_COMPARTMENT_ID:-${OCI_COMPARTMENT_OCID:-}}"
 OCI_REGION="${region:-${OCI_REGION:-}}"
 OCI_STREAM_POOL_NAME="${OCI_STREAM_POOL_NAME:-MultiCloud_Log_Pool}"
@@ -184,7 +184,7 @@ teardown_oci() {
           --wait-for-state SUCCEEDED \
           --max-wait-seconds 300
     fi
-    # Clear from .env
+    # Clear from .env.local
     [[ "$DRY_RUN" != true ]] && update_env_var "OCI_SCH_ID" "" "$ENV_PATH"
   else
     ok "SCH: not found (nothing to delete)"
